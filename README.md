@@ -12,8 +12,8 @@ natural, human tone, detects leads, and hands off to a human when needed.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Project setup, config, logging, tooling | In progress |
-| 2 | Clerk authentication | Planned |
+| 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold, CI pending |
+| 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Planned |
 | 4 | Redis + worker system | Planned |
 | 5 | Multi-tenant organizations, RBAC | Planned |

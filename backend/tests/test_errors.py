@@ -1,12 +1,7 @@
-import os
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-
-from fastapi import FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app.core.errors import AppError, register_error_handlers  # noqa: E402
+from app.core.errors import AppError, register_error_handlers
 
 
 def test_app_error_uses_standard_envelope() -> None:

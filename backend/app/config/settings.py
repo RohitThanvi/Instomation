@@ -19,8 +19,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=5, ge=0)
     redis_url: str
 
-    clerk_jwks_url: str = ""
-    clerk_issuer: str = ""
+    clerk_jwks_url: str
+    clerk_issuer: str
+    clerk_authorized_parties: list[str] = Field(default_factory=list)
+    clerk_jwks_cache_seconds: int = Field(default=3600, ge=60)
+    clerk_jwks_min_refetch_seconds: int = Field(default=30, ge=1)
 
     token_encryption_key: SecretStr = SecretStr("")
 

@@ -43,3 +43,12 @@ token and cost recording per request. No key rotation to evade limits.
 ## Conversation states
 
 `AI_ACTIVE -> HUMAN_REQUIRED -> HUMAN_ACTIVE -> RESOLVED`. AI never replies in HUMAN_* states.
+
+## Authentication (Phase 2)
+
+`ClerkTokenVerifier` (`app/core/security.py`) validates Clerk session JWTs: RS256 only, signature via
+cached JWKS, required `exp/iat/sub/iss`, issuer match, and `azp` checked against
+`CLERK_AUTHORIZED_PARTIES`. An unknown `kid` triggers a JWKS refetch that is rate-limited
+(`CLERK_JWKS_MIN_REFETCH_SECONDS`) so forged tokens cannot hammer Clerk. The dependency
+`CurrentIdentity` yields an `Identity` with no tenant data; tenant resolution comes from
+`organization_members` in Phase 5, never from client input.
