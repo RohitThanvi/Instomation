@@ -9,15 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import Settings
 from app.models.base import utcnow
-from app.models.enums import ProcessingStatus
-from app.models.instagram import WebhookEvent
+from app.models.enums import InstagramAccountStatus, ProcessingStatus
+from app.models.instagram import InstagramAccount, WebhookEvent
 from app.models.ops import Job
+from app.services.instagram.client import InstagramApi, InstagramApiError
+from app.services.instagram.crypto import TokenCipher, TokenDecryptionError
 from app.workers.queue import QueueUnavailableError, push_to_redis
 from app.workers.queues import QueueName
 
 logger = structlog.get_logger(__name__)
 
 _REQUEUE_BATCH = 500
+_REFRESH_BATCH = 200
 
 
 async def purge_finished_records(ctx: dict[str, Any]) -> None:
@@ -78,3 +81,49 @@ async def requeue_stale_jobs(ctx: dict[str, Any]) -> None:
             await session.commit()
     if requeued:
         logger.warning("jobs_requeued", count=len(requeued))
+
+
+async def refresh_instagram_tokens(ctx: dict[str, Any]) -> None:
+    """Refresh long-lived tokens nearing expiry; flag accounts that need re-authorization."""
+    factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    settings: Settings = ctx["settings"]
+    api: InstagramApi = ctx["instagram_api"]
+    cipher: TokenCipher = ctx["token_cipher"]
+    now = utcnow()
+    horizon = now + timedelta(days=settings.token_refresh_window_days)
+    refreshed = expired = 0
+    async with factory() as session:
+        accounts = (
+            await session.execute(
+                select(InstagramAccount)
+                .where(
+                    InstagramAccount.status == InstagramAccountStatus.ACTIVE,
+                    InstagramAccount.deleted_at.is_(None),
+                    InstagramAccount.token_expires_at < horizon,
+                )
+                .order_by(InstagramAccount.token_expires_at)
+                .limit(_REFRESH_BATCH)
+            )
+        ).scalars()
+        for account in accounts:
+            if account.token_expires_at is not None and account.token_expires_at <= now:
+                account.status = InstagramAccountStatus.TOKEN_EXPIRED
+                expired += 1
+                continue
+            try:
+                token = await api.refresh_token(cipher.decrypt(account.access_token_encrypted))
+            except TokenDecryptionError:
+                account.status = InstagramAccountStatus.TOKEN_EXPIRED
+                expired += 1
+            except InstagramApiError as exc:
+                if exc.is_token_error:
+                    account.status = InstagramAccountStatus.TOKEN_EXPIRED
+                    expired += 1
+                else:
+                    logger.warning("token_refresh_deferred", account_id=str(account.id))
+            else:
+                account.access_token_encrypted = cipher.encrypt(token.access_token)
+                account.token_expires_at = token.expires_at
+                refreshed += 1
+        await session.commit()
+    logger.info("instagram_token_refresh", refreshed=refreshed, expired=expired)

@@ -1,5 +1,6 @@
 from typing import Any
 
+import httpx
 from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -8,7 +9,13 @@ from app.config.settings import get_settings
 from app.core.logging import configure_logging
 from app.core.retry import RetryPolicy
 from app.db.session import create_engine, create_session_factory
-from app.workers.maintenance import purge_finished_records, requeue_stale_jobs
+from app.services.instagram.client import GraphInstagramApi
+from app.services.instagram.crypto import TokenCipher
+from app.workers.maintenance import (
+    purge_finished_records,
+    refresh_instagram_tokens,
+    requeue_stale_jobs,
+)
 from app.workers.queues import QueueName
 
 _settings = get_settings()
@@ -19,6 +26,7 @@ _CRON_JOBS = {
     QueueName.MAINTENANCE: [
         cron(requeue_stale_jobs, minute=set(range(2, 60, 5))),
         cron(purge_finished_records, hour={3}, minute={17}),
+        cron(refresh_instagram_tokens, hour={4}, minute={7}),
     ]
 }
 
@@ -29,6 +37,10 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
     ctx["settings"] = _settings
     ctx["engine"] = engine
     ctx["session_factory"] = create_session_factory(engine)
+    http_client = httpx.AsyncClient()
+    ctx["http_client"] = http_client
+    ctx["instagram_api"] = GraphInstagramApi(http_client, _settings)
+    ctx["token_cipher"] = TokenCipher.from_settings(_settings)
     ctx["retry_policy"] = RetryPolicy(
         max_attempts=_settings.job_max_tries,
         base_seconds=_settings.job_retry_base_seconds,
@@ -37,6 +49,8 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
 
 
 async def _on_shutdown(ctx: dict[str, Any]) -> None:
+    http_client: httpx.AsyncClient = ctx["http_client"]
+    await http_client.aclose()
     engine: AsyncEngine = ctx["engine"]
     await engine.dispose()
 

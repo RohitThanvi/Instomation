@@ -87,3 +87,38 @@ cached JWKS, required `exp/iat/sub/iss`, issuer match, and `azp` checked against
 - Each request runs in one unit of work (`app/db/deps.py`): commit on success, rollback on error.
   Audit rows (`record_audit`) are staged in that same transaction.
 - Pagination: stable `(created_at, id)` keyset via `app/core/pagination.py`; limit capped at 100.
+
+## Instagram integration (Phase 6)
+
+Uses **Instagram API with Instagram Login** (host `graph.instagram.com`, version `META_GRAPH_API_VERSION`).
+Endpoints and scopes were checked against Meta's current docs on 2026-09-28:
+
+- Authorize: `https://www.instagram.com/oauth/authorize` (scopes `instagram_business_basic`,
+  `instagram_business_manage_messages`, `instagram_business_manage_comments`).
+- Code -> short-lived token: `POST https://api.instagram.com/oauth/access_token`; short -> long-lived (60 days):
+  `GET graph.instagram.com/access_token`; refresh: `GET graph.instagram.com/refresh_access_token`.
+- DM: `POST /{ig-id}/messages` with `recipient.id`; private reply: same endpoint with
+  `recipient.comment_id` (one per comment, within 7 days); comment reply: `POST /{comment-id}/replies`;
+  webhooks: `POST /me/subscribed_apps?subscribed_fields=...`.
+- Standard Access covers accounts you own or added to the app; **Advanced Access (App Review + Business
+  Verification) is required to serve other customers' accounts.**
+
+Design: business code depends on the `InstagramApi` protocol (`app/services/instagram/client.py`),
+never on HTTP. Tokens are sent in `Authorization` headers (the two exchange GETs need query params, and
+httpx URL logging is disabled to keep them out of logs). Errors map to `InstagramApiError` with
+`is_token_error / is_rate_limited / is_retryable` so callers can retry or ask for re-authorization.
+
+Connection flow: `oauth/start` stores a single-use state (Redis, TTL `OAUTH_STATE_TTL_SECONDS`) bound to
+user + organization; the callback consumes it atomically (`GETDEL`), exchanges tokens, verifies the account is
+Business/Creator, encrypts the token with Fernet (`TokenCipher`, supports key rotation via
+`TOKEN_ENCRYPTION_PREVIOUS_KEYS`), subscribes webhooks (failure is stored as `webhook_subscribed=false`,
+never hidden) and audits. An Instagram account can belong to only one organization. Disconnect wipes the
+token and keeps the row so conversation history stays attached on reconnect.
+
+Capabilities (`FEATURE_*`): comment like, bio update and photo update are hard-coded off because Meta exposes
+no endpoint; they cannot be enabled by configuration. Reply/DM/private-reply can be switched off per
+environment. The `maintenance` cron `refresh_instagram_tokens` (daily 04:07 UTC) renews tokens expiring within
+`TOKEN_REFRESH_WINDOW_DAYS` and marks accounts `token_expired` when re-authorization is needed.
+
+Known constraint carried into Phase 13: DMs can only be sent to users who messaged first, within Meta's
+messaging window; the DM sender must enforce this and treat rejections as non-retryable.

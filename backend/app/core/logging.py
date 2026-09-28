@@ -7,6 +7,9 @@ import structlog
 def configure_logging(level: str) -> None:
     """Emit structured JSON logs; request-scoped context is merged via contextvars."""
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
+    # httpx logs full request URLs at INFO, and some Meta endpoints take tokens as query params.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

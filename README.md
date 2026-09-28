@@ -17,7 +17,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
-| 6 | Instagram OAuth + API abstraction | Planned |
+| 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
 | 7-8 | Webhook receiver + event queue | Planned |
 | 9 | Conversations / messages | Planned |
 | 10-11 | AI gateway + moderation | Planned |
@@ -113,6 +113,7 @@ See `.env.example` (documented inline). Never commit real secrets.
 
 - `docs/ARCHITECTURE.md`: system design, data flow, concurrency, failure handling.
 - `docs/DATABASE.md`: schema conventions, tables, indexes, tenancy and idempotency rules.
+- `docs/SECURITY.md`: auth, tenancy, secrets, token handling, retention on disconnect.
 
 ## Database and migrations
 
@@ -166,3 +167,11 @@ registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.p
 Tenant selection: send `X-Organization-ID` when the user belongs to several organizations. The server
 verifies membership; with exactly one membership the header may be omitted. Pagination uses
 `?limit=&cursor=` and returns `{items, next_cursor}`. Add-member/invitation flow is not built yet.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/instagram/capabilities` | Feature flags with reasons; unsupported ones are always `enabled=false` |
+| POST | `/api/v1/instagram/oauth/start` | Returns `authorization_url` (needs `settings_manage`) |
+| GET | `/api/v1/instagram/oauth/callback` | Meta redirect target; 303-redirects to `FRONTEND_BASE_URL` + `OAUTH_RESULT_PATH` with `?status=connected` or `?status=error&reason=<CODE>` |
+| GET | `/api/v1/instagram/accounts` | Connected accounts (paginated); never returns tokens |
+| DELETE | `/api/v1/instagram/accounts/{id}` | Disconnect (token wiped) |

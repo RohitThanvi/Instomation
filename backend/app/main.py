@@ -15,6 +15,8 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import ClerkTokenVerifier, http_jwks_fetcher
 from app.db.session import create_engine, create_session_factory
+from app.services.instagram.client import GraphInstagramApi
+from app.services.instagram.crypto import TokenCipher
 from app.workers.queue import JobQueue
 
 
@@ -27,6 +29,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.job_queue = JobQueue(arq_pool, app.state.session_factory)
     http_client = httpx.AsyncClient()
+    app.state.instagram_api = GraphInstagramApi(http_client, settings)
+    app.state.token_cipher = TokenCipher.from_settings(settings)
     app.state.token_verifier = ClerkTokenVerifier(
         fetch_jwks=http_jwks_fetcher(settings.clerk_jwks_url, http_client),
         issuer=settings.clerk_issuer,
