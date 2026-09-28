@@ -12,9 +12,9 @@ natural, human tone, detects leads, and hands off to a human when needed.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold, CI pending |
+| 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold pending; CI workflow staged (see below) |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
-| 3 | PostgreSQL models + Alembic | Planned |
+| 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
 | 4 | Redis + worker system | Planned |
 | 5 | Multi-tenant organizations, RBAC | Planned |
 | 6 | Instagram OAuth + API abstraction | Planned |
@@ -112,3 +112,28 @@ See `.env.example` (documented inline). Never commit real secrets.
 ## Documentation index
 
 - `docs/ARCHITECTURE.md`: system design, data flow, concurrency, failure handling.
+- `docs/DATABASE.md`: schema conventions, tables, indexes, tenancy and idempotency rules.
+
+## Database and migrations
+
+```bash
+cd backend
+alembic upgrade head                              # apply migrations
+alembic revision --autogenerate -m "message"      # after changing models; review the output
+alembic check                                     # fails if models and migrations drift
+```
+
+Integration tests run against real PostgreSQL when `TEST_DATABASE_URL` is set (CI sets it):
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/instomation_test pytest -q
+```
+
+Never edit a schema by hand; every change ships an Alembic migration. See `docs/DATABASE.md`.
+
+## CI
+
+The backend workflow is staged at `docs/ci/backend-ci.yml` (ruff, format check, pytest with Postgres and
+Redis services). GitHub only accepts pushes to `.github/workflows/` from a token with the `workflow`
+scope, so activate it by copying the file to `.github/workflows/backend-ci.yml` (via the web UI or a
+token with that scope), then delete the staged copy.

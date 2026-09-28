@@ -29,8 +29,15 @@ PRIVATE_KEY, PUBLIC_JWK = _make_key()
 
 def _token(**overrides: Any) -> str:
     now = int(time.time())
-    claims = {"sub": "user_1", "sid": "sess_1", "iss": ISSUER, "iat": now, "exp": now + 60,
-              "azp": ORIGIN, **overrides}
+    claims = {
+        "sub": "user_1",
+        "sid": "sess_1",
+        "iss": ISSUER,
+        "iat": now,
+        "exp": now + 60,
+        "azp": ORIGIN,
+        **overrides,
+    }
     return jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": "key-1"})
 
 
