@@ -73,3 +73,17 @@ cached JWKS, required `exp/iat/sub/iss`, issuer match, and `azp` checked against
 - **Scheduler**: arq cron on the maintenance queue (`purge_finished_records` daily 03:17 UTC,
   `requeue_stale_jobs` every 5 minutes). No `sleep()` loops.
 - Redis is never the source of truth: queue loss is repaired from PostgreSQL.
+
+## Tenancy and RBAC (Phase 5)
+
+- Request flow: `CurrentIdentity` (Clerk JWT) -> `CurrentUser` (JIT upsert, race-safe) -> `Tenant`
+  (`resolve_tenant`: membership lookup; optional `X-Organization-ID` is only a *selection* checked
+  against membership) -> `require(Permission.X)`.
+- Permissions live in `app/core/rbac.py`. OWNER: all. ADMIN: all except `org_manage` and
+  `billing_manage`. MANAGER: conversations, analytics, automation. STAFF: assigned conversations.
+  Only owners may grant, revoke or modify OWNER; the last owner can never be demoted or removed.
+- Every query on tenant data must filter by `TenantContext.organization_id`; cross-tenant ids return
+  404 (or 403 for an organization the caller is not a member of). Covered by integration tests.
+- Each request runs in one unit of work (`app/db/deps.py`): commit on success, rollback on error.
+  Audit rows (`record_audit`) are staged in that same transaction.
+- Pagination: stable `(created_at, id)` keyset via `app/core/pagination.py`; limit capped at 100.

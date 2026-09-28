@@ -16,7 +16,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
-| 5 | Multi-tenant organizations, RBAC | Planned |
+| 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Planned |
 | 7-8 | Webhook receiver + event queue | Planned |
 | 9 | Conversations / messages | Planned |
@@ -151,3 +151,18 @@ WORKER_QUEUE=maintenance arq app.workers.settings.WorkerSettings   # one process
 Queues: `events`, `ai`, `instagram`, `maintenance`. A worker refuses to start for a queue with no
 registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.py`) and registered in
 `app/workers/settings.py::HANDLERS`. Full design in `docs/ARCHITECTURE.md`.
+
+## API (implemented so far)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health`, `/ready` | Liveness; readiness (DB + Redis) |
+| GET | `/api/v1/auth/me` | Verified Clerk user id |
+| POST | `/api/v1/organizations` | Creates org; caller becomes OWNER |
+| GET | `/api/v1/organizations` | Caller's organizations (cursor-paginated) |
+| GET | `/api/v1/organizations/current/members` | Members of the resolved tenant (paginated) |
+| PATCH/DELETE | `/api/v1/organizations/current/members/{membership_id}` | Requires `members_manage` |
+
+Tenant selection: send `X-Organization-ID` when the user belongs to several organizations. The server
+verifies membership; with exactly one membership the header may be omitted. Pagination uses
+`?limit=&cursor=` and returns `{items, next_cursor}`. Add-member/invitation flow is not built yet.
