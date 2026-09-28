@@ -25,8 +25,8 @@ class RetryPolicy:
         Delay is base * 2^(attempt-1), capped, then scaled by a jitter factor in [0.5, 1.0] so
         concurrent retries do not synchronize. A larger server-provided Retry-After always wins.
         """
-        exponential = min(self.cap_seconds, self.base_seconds * 2 ** (attempt - 1))
+        exponential = min(self.cap_seconds, self.base_seconds * 2.0 ** (attempt - 1))
         jittered = exponential * (0.5 + 0.5 * rng())
         if retry_after is None:
             return jittered
-        return float(max(jittered, retry_after))
+        return max(jittered, retry_after)
