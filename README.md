@@ -100,7 +100,7 @@ docs/      ARCHITECTURE.md (and API/DB/AI/SECURITY/DEPLOYMENT docs as they land)
 
 ```bash
 cp .env.example .env            # fill in values
-docker compose up -d            # postgres, redis, api, worker, frontend (added in Phase 1)
+docker compose up -d            # postgres, redis, api (worker and frontend join in later phases)
 ```
 
 Detailed setup, migrations, worker, frontend and test commands are added as each phase lands.
