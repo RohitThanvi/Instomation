@@ -1,48 +1,19 @@
-"""Schema tests against a real PostgreSQL. Set TEST_DATABASE_URL to run (CI provides one)."""
+"""Schema tests against a real PostgreSQL."""
 
-import os
-import subprocess
-import sys
 import uuid
-from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.models import Base
-
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-
-pytestmark = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL is not set")
-
-
-def _alembic(*args: str) -> None:
-    env = {**os.environ, "DATABASE_URL": str(TEST_DATABASE_URL)}
-    subprocess.run([sys.executable, "-m", "alembic", *args], cwd=BACKEND_DIR, env=env, check=True)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def migrated_database() -> Iterator[None]:
-    _alembic("downgrade", "base")
-    _alembic("upgrade", "head")
-    yield
-    _alembic("downgrade", "base")
-
-
-@pytest_asyncio.fixture
-async def engine() -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(str(TEST_DATABASE_URL))
-    yield engine
-    await engine.dispose()
+from tests.integration.conftest import DATABASE_URL
+from tests.integration.helpers import run_alembic
 
 
 def test_migrations_match_models() -> None:
-    _alembic("check")
+    run_alembic(DATABASE_URL, "check")
 
 
 async def test_tenant_owned_tables_index_organization_id(engine: AsyncEngine) -> None:

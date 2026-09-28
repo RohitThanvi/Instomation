@@ -52,3 +52,24 @@ cached JWKS, required `exp/iat/sub/iss`, issuer match, and `azp` checked against
 (`CLERK_JWKS_MIN_REFETCH_SECONDS`) so forged tokens cannot hammer Clerk. The dependency
 `CurrentIdentity` yields an `Identity` with no tenant data; tenant resolution comes from
 `organization_members` in Phase 5, never from client input.
+
+## Workers, jobs and Redis primitives (Phase 4)
+
+- **Durable enqueue** (`app/workers/queue.py`): `JobQueue.enqueue` commits a `jobs` row (PENDING) and
+  then pushes to Redis using the row UUID as the arq job id, so duplicate pushes are ignored. If Redis
+  is down the row stays PENDING and the `requeue_stale_jobs` cron (every 5 min, threshold
+  `JOB_REQUEUE_AFTER_SECONDS`) pushes it later. Accepted work is never lost.
+- **Handlers** (`app/workers/runtime.py`): `tracked(handler)` maintains job status/attempts, skips jobs
+  already DONE, and turns `RetryableJobError(retry_after=...)` into an arq `Retry` using
+  `RetryPolicy` (exponential 1s,2s,4s... capped, jitter factor 0.5-1.0, larger `Retry-After` wins,
+  bounded by `JOB_MAX_TRIES`). Exhausted retries and unhandled errors end as FAILED and are visible to admins.
+- **Queues** (`app/workers/queues.py`): events, ai, instagram, maintenance; one worker process per
+  queue via `WORKER_QUEUE`; scale by running more processes.
+- **Rate limiting** (`app/core/rate_limit.py`): atomic multi-layer check-then-consume in one Lua
+  script (global -> tenant -> account -> conversation -> provider). A request denied by an inner layer
+  consumes nothing from outer layers. Fixed windows (up to 2x burst at a boundary).
+- **Locks** (`app/core/locks.py`): token-owned Redis lock with TTL for per-conversation ordering, and a
+  lease semaphore (Redis clock, self-expiring) for per-account / per-provider concurrency caps.
+- **Scheduler**: arq cron on the maintenance queue (`purge_finished_records` daily 03:17 UTC,
+  `requeue_stale_jobs` every 5 minutes). No `sleep()` loops.
+- Redis is never the source of truth: queue loss is repaired from PostgreSQL.

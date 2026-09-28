@@ -40,6 +40,7 @@ class Job(UUIDPrimaryKey, Timestamps, Base):
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), index=True
     )
+    queue: Mapped[str] = mapped_column(String(32))
     kind: Mapped[str] = mapped_column(String(64))
     status: Mapped[ProcessingStatus] = mapped_column(enum_column(ProcessingStatus))
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

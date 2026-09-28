@@ -15,7 +15,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold pending; CI workflow staged (see below) |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
-| 4 | Redis + worker system | Planned |
+| 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Planned |
 | 6 | Instagram OAuth + API abstraction | Planned |
 | 7-8 | Webhook receiver + event queue | Planned |
@@ -46,7 +46,7 @@ Update this table in the same commit that completes a phase.
 | Frontend | Cloudflare Pages / Vercel |
 | API + worker | Single container (Fly.io or Oracle Cloud Always Free); worker is a separate process of the same image |
 | PostgreSQL | Neon / Supabase free tier |
-| Redis | Upstash free tier (request-quota aware: batch calls, no polling loops) |
+| Redis | Redis container on the same VM (recommended, free, no quota). Upstash free tier works but its command quota can be consumed by worker polling; raise `WORKER_POLL_DELAY_SECONDS` if you use it |
 | Auth | Clerk free tier |
 | AI | Groq free tier |
 
@@ -123,11 +123,14 @@ alembic revision --autogenerate -m "message"      # after changing models; revie
 alembic check                                     # fails if models and migrations drift
 ```
 
-Integration tests run against real PostgreSQL when `TEST_DATABASE_URL` is set (CI sets it):
+Integration tests need real PostgreSQL and Redis (use a dedicated Redis DB; it is flushed):
 
 ```bash
-TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/instomation_test pytest -q
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/instomation_test \
+TEST_REDIS_URL=redis://localhost:6379/1 pytest -q
 ```
+
+Without both variables the integration tests are skipped.
 
 Never edit a schema by hand; every change ships an Alembic migration. See `docs/DATABASE.md`.
 
@@ -137,3 +140,14 @@ The backend workflow is staged at `docs/ci/backend-ci.yml` (ruff, format check, 
 Redis services). GitHub only accepts pushes to `.github/workflows/` from a token with the `workflow`
 scope, so activate it by copying the file to `.github/workflows/backend-ci.yml` (via the web UI or a
 token with that scope), then delete the staged copy.
+
+## Workers
+
+```bash
+cd backend
+WORKER_QUEUE=maintenance arq app.workers.settings.WorkerSettings   # one process per queue
+```
+
+Queues: `events`, `ai`, `instagram`, `maintenance`. A worker refuses to start for a queue with no
+registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.py`) and registered in
+`app/workers/settings.py::HANDLERS`. Full design in `docs/ARCHITECTURE.md`.

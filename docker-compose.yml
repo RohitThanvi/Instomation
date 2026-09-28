@@ -39,5 +39,19 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    build: ./backend
+    command: ["arq", "app.workers.settings.WorkerSettings"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
+      REDIS_URL: redis://redis:6379/0
+      WORKER_QUEUE: maintenance
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:

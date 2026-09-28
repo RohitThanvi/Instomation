@@ -2,6 +2,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
@@ -13,6 +15,7 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import ClerkTokenVerifier, http_jwks_fetcher
 from app.db.session import create_engine, create_session_factory
+from app.workers.queue import JobQueue
 
 
 @asynccontextmanager
@@ -21,6 +24,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = create_engine(settings)
     app.state.session_factory = create_session_factory(app.state.engine)
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    app.state.job_queue = JobQueue(arq_pool, app.state.session_factory)
     http_client = httpx.AsyncClient()
     app.state.token_verifier = ClerkTokenVerifier(
         fetch_jwks=http_jwks_fetcher(settings.clerk_jwks_url, http_client),
@@ -33,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await http_client.aclose()
+        await arq_pool.aclose()
         await app.state.redis.aclose()
         await app.state.engine.dispose()
 
