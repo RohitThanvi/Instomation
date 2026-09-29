@@ -12,7 +12,8 @@ natural, human tone, detects leads, and hands off to a human when needed.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold pending; CI workflow staged (see below) |
+| 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
+| F | Frontend (see `docs/FRONTEND.md`) | Screen 1 of 8 done (auth shell); onboarding next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
@@ -113,6 +114,7 @@ See `.env.example` (documented inline). Never commit real secrets.
 
 - `docs/ARCHITECTURE.md`: system design, data flow, concurrency, failure handling.
 - `docs/DATABASE.md`: schema conventions, tables, indexes, tenancy and idempotency rules.
+- `docs/FRONTEND.md`: frontend structure, conventions, run/test, screen status.
 - `docs/SECURITY.md`: auth, tenancy, secrets, token handling, retention on disconnect.
 
 ## Database and migrations
