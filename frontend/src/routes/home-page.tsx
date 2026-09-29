@@ -64,7 +64,7 @@ function WorkspaceCard() {
         <CardDescription>
           {currentOrganization === null
             ? 'You do not have a workspace yet. Guided setup is coming next.'
-            : `${currentOrganization.name} · ${currentOrganization.role.toLowerCase()}`}
+            : `${currentOrganization.name} · ${currentOrganization.role}`}
         </CardDescription>
       </CardHeader>
       {organizations.length > 1 && (
