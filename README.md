@@ -18,7 +18,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
-| 7-8 | Webhook receiver + event queue | Planned |
+| 7-8 | Webhook receiver + event queue | Done (signed receiver, dedup, fast-return, EVENTS queue dispatch) |
 | 9 | Conversations / messages | Planned |
 | 10-11 | AI gateway + moderation | Planned |
 | 12 | Knowledge base | Planned |
@@ -175,3 +175,5 @@ verifies membership; with exactly one membership the header may be omitted. Pagi
 | GET | `/api/v1/instagram/oauth/callback` | Meta redirect target; 303-redirects to `FRONTEND_BASE_URL` + `OAUTH_RESULT_PATH` with `?status=connected` or `?status=error&reason=<CODE>` |
 | GET | `/api/v1/instagram/accounts` | Connected accounts (paginated); never returns tokens |
 | DELETE | `/api/v1/instagram/accounts/{id}` | Disconnect (token wiped) |
+
+| GET/POST | `/api/v1/instagram/webhooks` | Meta verification handshake and event delivery. Unauthenticated by design (protected by `X-Hub-Signature-256` and, for GET, the verify token); never call it from the frontend. |

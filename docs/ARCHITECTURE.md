@@ -185,3 +185,29 @@ fixed:
 Net: went from "tests pass" to "tests pass and independently verified against running processes",
 with 45 new regression tests (53 -> 98) — one for every defect above, each checked to fail on the
 prior code.
+
+## Webhook receiver and event queue (Phase 7-8)
+
+- **Verification (`GET /api/v1/instagram/webhooks`):** Meta's one-time handshake when the
+  subscription is configured. Returns `hub.challenge` only if `hub.mode=subscribe` and
+  `hub.verify_token` matches `META_WEBHOOK_VERIFY_TOKEN` (constant-time compare); otherwise 403.
+- **Delivery (`POST /api/v1/instagram/webhooks`):** fails closed (503) if the app secret or verify
+  token is unset. Verifies `X-Hub-Signature-256` (HMAC-SHA256 of the *raw* body with the app secret,
+  constant-time compare) before touching the JSON. Body capped at 2 MB. A malformed payload is 400;
+  an invalid signature is 403; neither is ever parsed as JSON first.
+- **Idempotency:** each entry is flattened into one or more `ParsedItem`s (`message:{mid}`,
+  `{field}:{id}`) and inserted with `ON CONFLICT (external_event_id) DO NOTHING` — a duplicate Meta
+  delivery (or a duplicate item within one delivery) is silently a no-op, never a duplicate reply
+  later.
+- **Fast return:** the route only verifies, resolves the Instagram account (if known) to its
+  organization, persists, and calls `JobQueue.enqueue` onto the `events` queue. No AI call and no
+  outbound Instagram call happen on this path, ever. An event for an unrecognized `external_account_id`
+  is still stored (`organization_id`/`instagram_account_id` null) rather than dropped, so it's visible
+  for investigation instead of silently lost.
+- **Processing (`app/workers/queue.py::_process_webhook_event`):** an `events`-queue job (wrapped in
+  the Phase 4 `tracked()` — inherits retry/backoff, DONE-skip idempotency) loads the `WebhookEvent` and
+  calls `app/services/events/dispatch.py::dispatch`, a registry keyed by `event_type`. Comment and DM
+  business logic (Phases 9, 13, 14) register handlers here; an unrecognized type is logged and skipped,
+  never raises.
+- Verified against a real running server: valid handshake, wrong token, unsigned POST, tampered body,
+  and a correctly HMAC-signed POST — all behave as specified.

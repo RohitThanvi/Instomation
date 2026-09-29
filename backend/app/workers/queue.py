@@ -6,7 +6,9 @@ from arq.connections import ArqRedis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.models.base import utcnow
 from app.models.enums import ProcessingStatus
+from app.models.instagram import WebhookEvent
 from app.models.ops import Job
 from app.workers.queues import QueueName
 
@@ -70,3 +72,34 @@ async def push_to_redis(
     except RedisError as exc:
         logger.warning("enqueue_failed", job_id=str(job_id), queue=queue.value)
         raise QueueUnavailableError(str(job_id)) from exc
+
+
+async def _process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """EVENTS-queue handler: resolve the event to its tenant, dispatch, mark DONE.
+
+    Import is local to avoid a circular import (this module is imported by app.main).
+    """
+    import uuid
+
+    from app.models.enums import ProcessingStatus
+    from app.services.events.dispatch import dispatch
+    from app.workers.errors import RetryableJobError
+
+    factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    event_id = uuid.UUID(payload["webhook_event_id"])
+    async with factory() as session:
+        event = await session.get(WebhookEvent, event_id)
+        if event is None:
+            return
+        if event.status is ProcessingStatus.DONE:
+            return
+        try:
+            await dispatch(session, event)
+        except Exception as exc:
+            event.status = ProcessingStatus.FAILED
+            event.error_message = f"{type(exc).__name__}: {exc}"[:1000]
+            await session.commit()
+            raise RetryableJobError(str(exc)) from exc
+        event.status = ProcessingStatus.DONE
+        event.processed_at = utcnow()
+        await session.commit()

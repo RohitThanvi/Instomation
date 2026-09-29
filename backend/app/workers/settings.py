@@ -16,12 +16,16 @@ from app.workers.maintenance import (
     refresh_instagram_tokens,
     requeue_stale_jobs,
 )
+from app.workers.queue import _process_webhook_event
 from app.workers.queues import QueueName
+from app.workers.runtime import tracked
 
 _settings = get_settings()
 
 # Task handlers per queue. Later phases register their `tracked` handlers here.
-HANDLERS: dict[QueueName, list[Any]] = {}
+HANDLERS: dict[QueueName, list[Any]] = {
+    QueueName.EVENTS: [tracked(_process_webhook_event)],
+}
 _CRON_JOBS = {
     QueueName.MAINTENANCE: [
         cron(requeue_stale_jobs, minute=set(range(2, 60, 5))),
