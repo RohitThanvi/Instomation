@@ -26,3 +26,21 @@ export function fetchOrganizations(
     signal,
   })
 }
+
+export const createOrganizationSchema = z.object({
+  name: z.string().trim().min(1, 'Give your workspace a name').max(200),
+  account_type: accountTypeSchema,
+})
+export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>
+
+export function createOrganization(
+  client: ApiClient,
+  input: CreateOrganizationInput,
+): Promise<Organization> {
+  return client.request({
+    method: 'POST',
+    path: `${API_PREFIX}/organizations`,
+    schema: organizationSchema,
+    body: input,
+  })
+}

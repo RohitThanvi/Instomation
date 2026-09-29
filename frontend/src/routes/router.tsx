@@ -1,5 +1,6 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 import { ProtectedRoute } from '@/auth/protected-route'
+import { RequireOrganization } from '@/auth/require-organization'
 import { AppLayout } from '@/components/layout/app-layout'
 import { ROUTES } from '@/config/constants'
 import type { Env } from '@/config/env'
@@ -24,11 +25,29 @@ export function createRoutes(env: Env): RouteObject[] {
           element: <ProtectedRoute />,
           children: [
             {
+              path: `${ROUTES.onboarding}/:step?`,
+              lazy: async () => ({
+                Component: (await import('@/features/onboarding/onboarding-page')).OnboardingPage,
+              }),
+            },
+            {
               element: <AppLayout />,
               children: [
                 {
-                  index: true,
-                  lazy: async () => ({ Component: (await import('./home-page')).HomePage }),
+                  element: <RequireOrganization />,
+                  children: [
+                    {
+                      index: true,
+                      lazy: async () => ({ Component: (await import('./home-page')).HomePage }),
+                    },
+                    {
+                      path: ROUTES.instagramSettings.slice(1),
+                      lazy: async () => ({
+                        Component: (await import('./instagram-settings-page'))
+                          .InstagramSettingsPage,
+                      }),
+                    },
+                  ],
                 },
                 {
                   path: '*',

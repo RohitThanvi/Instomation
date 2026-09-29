@@ -19,3 +19,11 @@ export function useSession(): SessionValue {
   if (value === null) throw new Error('useSession must be used inside <SessionProvider>')
   return value
 }
+
+/** For routes wrapped in <RequireOrganization>, where a current organization is guaranteed. */
+export function useRequiredOrganization(): Organization {
+  const { currentOrganization } = useSession()
+  if (currentOrganization === null)
+    throw new Error('useRequiredOrganization used without an organization')
+  return currentOrganization
+}

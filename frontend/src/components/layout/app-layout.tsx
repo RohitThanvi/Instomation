@@ -1,12 +1,16 @@
 import { UserButton } from '@clerk/clerk-react'
-import { LayoutDashboard } from 'lucide-react'
+import { LayoutDashboard, Plug, Rocket } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Brand } from './brand'
 import { OrganizationSwitcher } from './organization-switcher'
 import { ROUTES } from '@/config/constants'
 import { cn } from '@/lib/cn'
 
-const NAV_ITEMS = [{ to: ROUTES.home, label: 'Overview', icon: LayoutDashboard }] as const
+const NAV_ITEMS = [
+  { to: ROUTES.home, label: 'Overview', icon: LayoutDashboard },
+  { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
+  { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },
+] as const
 
 export function AppLayout() {
   return (

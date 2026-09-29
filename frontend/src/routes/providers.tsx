@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { errorMessage } from '@/api/errors'
+import { isNotYetAvailable } from '@/api/unavailable'
 import { SessionProvider } from '@/auth/session'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { ToastProvider } from '@/components/ui/toast'
@@ -15,6 +16,8 @@ function QueryLayer({ apiBaseUrl }: { apiBaseUrl: string }) {
   const toast = useToast()
   const [queryClient] = useState(() =>
     createQueryClient((error) => {
+      // Screens render an explicit "not yet available" state for these; a toast would be noise.
+      if (isNotYetAvailable(error)) return
       toast({ title: 'That did not work', description: errorMessage(error), variant: 'error' })
     }),
   )
