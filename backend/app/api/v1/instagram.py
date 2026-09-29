@@ -93,6 +93,10 @@ async def oauth_callback(
     except AppError as exc:
         await session.rollback()
         return back(status="error", reason=exc.code)
+    except Exception:
+        logger.exception("oauth_callback_failed")
+        await session.rollback()
+        return back(status="error", reason="INTERNAL_ERROR")
     return back(status="connected")
 
 

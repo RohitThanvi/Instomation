@@ -17,24 +17,41 @@ React, Vite, TypeScript (strict), React Router, Tailwind CSS, shadcn/ui, TanStac
 React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No Next.js.**
 
 ## Backend contract (current state; do not invent endpoints)
-- Base URL from env `VITE_API_BASE_URL`; never hardcode it.
-- Auth: send the Clerk session token as `Authorization: Bearer <token>` on every API call.
-- Available now: `GET /health`, `GET /ready`, `GET /api/v1/auth/me` -> `{ "clerk_user_id": string }`.
-- Errors always use `{ "error": { "code": string, "message": string } }`. Build one API client that
-  parses this envelope into a typed `ApiError`, and show `message` to users. Known codes so far:
-  `UNAUTHENTICATED` (401), `AUTH_PROVIDER_UNAVAILABLE` (503), `VALIDATION_ERROR` (422),
-  `INTERNAL_ERROR` (500).
-- Send `X-Request-ID` (uuid) per request; the backend echoes it.
-- Planned routers (not built yet): `/api/v1/{instagram,conversations,messages,comments,automations,
-  business,knowledge,analytics,settings,usage}`. Code against typed interfaces in `src/api/`, keep
-  each module behind its own service file, and mark screens whose endpoint is not live as
-  "not yet available" states. Never fake data or success states in production paths. Any
-  development-only mock must be clearly labeled and disabled in production builds.
-- The browser never supplies `organization_id`; the server resolves the tenant from the Clerk identity.
-- The frontend never sees Instagram tokens.
-- Instagram capabilities come from the server. Comment likes, bio and photo updates are NOT
-  supported by Meta's API: the UI must not advertise them unless the server reports the capability on.
-- List endpoints will be cursor-paginated: use `useInfiniteQuery`, debounce search, virtualize long lists.
+- Base URL from env `VITE_API_BASE_URL`; never hardcode it. Send `Authorization: Bearer <Clerk session token>`
+  on every API call and an `X-Request-ID` (8-64 chars of `A-Za-z0-9._-`; anything else is replaced server-side).
+- Errors always use `{ "error": { "code": string, "message": string } }`. Build one API client that parses this
+  into a typed `ApiError`, and show `message` to users. Codes so far: `UNAUTHENTICATED` (401),
+  `AUTH_PROVIDER_UNAVAILABLE` (503, retry), `PERMISSION_DENIED` (403), `ORGANIZATION_REQUIRED` (400),
+  `ORGANIZATION_ACCESS_DENIED` (403), `MEMBER_NOT_FOUND` (404), `LAST_OWNER` (409), `INVALID_CURSOR` (400),
+  `VALIDATION_ERROR` (422), `INSTAGRAM_ACCOUNT_NOT_FOUND` (404), `INTERNAL_ERROR` (500).
+- **Tenant selection:** the server derives the organization from the Clerk identity. A user in exactly one
+  organization needs nothing extra; a user in several must send `X-Organization-ID: <uuid>` (only organizations
+  the user belongs to are accepted). With none, tenant endpoints return `ORGANIZATION_REQUIRED`: show onboarding.
+- **Pagination:** list endpoints take `?limit=&cursor=` (limit 1-100) and return `{ items, next_cursor }`; use
+  `useInfiniteQuery`.
+- Live endpoints:
+  - `GET /health`, `GET /ready`
+  - `GET /api/v1/auth/me` -> `{ clerk_user_id }`
+  - `POST /api/v1/organizations` `{ name, account_type: creator|business|agency|personal_brand|other }` -> `{ id, name, account_type, role }`
+  - `GET /api/v1/organizations` (paginated, the caller's organizations with their role)
+  - `GET /api/v1/organizations/current/members` (paginated) -> `{ membership_id, user_id, email, full_name, role }`
+  - `PATCH|DELETE /api/v1/organizations/current/members/{membership_id}` (`{ role }`; needs `members_manage`)
+  - `GET /api/v1/instagram/capabilities` -> `[{ feature, enabled, reason }]`; comment like / bio / photo are
+    always disabled (Meta exposes no API): never render controls for a disabled capability.
+  - `POST /api/v1/instagram/oauth/start` -> `{ authorization_url }`: navigate the browser to it. Meta returns to
+    the backend, which redirects to `<origin>/settings/instagram?status=connected` or
+    `?status=error&reason=<CODE>` (`INVALID_OAUTH_STATE`, `AUTHORIZATION_DENIED`,
+    `INSTAGRAM_ACCOUNT_NOT_PROFESSIONAL`, `ACCOUNT_ALREADY_CONNECTED`, `PERMISSION_DENIED`,
+    `INSTAGRAM_UNAVAILABLE`, `INSTAGRAM_CONNECTION_FAILED`, `INTERNAL_ERROR`). Handle every reason with a clear message.
+  - `GET /api/v1/instagram/accounts` (paginated) -> `{ id, username, status: active|token_expired|disconnected,
+    granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
+    `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
+  - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
+- Roles: OWNER, ADMIN, MANAGER, STAFF. Hide or disable UI by role, but the server is authoritative (403).
+- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,knowledge,analytics,settings,usage}`.
+  Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
+- The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
+- Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.
 
 ## Screens (in this order)
 1. Auth shell (Clerk sign-in/up), protected routes, app layout, error boundary, toasts.
@@ -64,8 +81,7 @@ Strict TS, no `any`, Zod-validated API responses and forms, route-level code spl
 caching with sensible invalidation, accessible (keyboard, ARIA, contrast), ESLint + Prettier, Vitest +
 Testing Library for components and hooks. Add `frontend/Dockerfile` (multi-stage, static serve) and a
 `frontend` service in `docker-compose.yml`. Document env vars in `.env.example` (`VITE_API_BASE_URL`,
-`VITE_CLERK_PUBLISHABLE_KEY`). Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must
-include the frontend origin.
+`VITE_CLERK_PUBLISHABLE_KEY`). 
 
 ## Workflow
 Work in small commits, one screen or feature at a time, and update the README phase table and add

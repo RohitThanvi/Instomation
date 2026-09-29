@@ -103,6 +103,19 @@ class CommunicationStyle(StrEnum):
     FRIENDLY = "friendly"
 
 
+class RuleScope(StrEnum):
+    COMMENT = "comment"
+    DM = "dm"
+    BOTH = "both"
+
+
+class OffHoursPolicy(StrEnum):
+    RESPOND = "respond"
+    AUTO_REPLY = "auto_reply"
+    DEFER = "defer"
+    ESCALATE = "escalate"
+
+
 class KnowledgeKind(StrEnum):
     FAQ = "faq"
     PRODUCT = "product"

@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -63,7 +64,15 @@ class InstagramAccount(UUIDPrimaryKey, TenantOwned, Timestamps, SoftDelete, Base
 
 class Customer(UUIDPrimaryKey, TenantOwned, Timestamps, SoftDelete, Base):
     __tablename__ = "customers"
-    __table_args__ = (UniqueConstraint("instagram_account_id", "external_user_id"),)
+    __table_args__ = (
+        Index(
+            "uq_customers_account_external_user_active",
+            "instagram_account_id",
+            "external_user_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     instagram_account_id: Mapped[uuid.UUID] = _fk("instagram_accounts.id")
     external_user_id: Mapped[str] = mapped_column(String(64))
@@ -75,7 +84,13 @@ class Customer(UUIDPrimaryKey, TenantOwned, Timestamps, SoftDelete, Base):
 class Conversation(UUIDPrimaryKey, TenantOwned, Timestamps, SoftDelete, Base):
     __tablename__ = "conversations"
     __table_args__ = (
-        UniqueConstraint("instagram_account_id", "customer_id"),
+        Index(
+            "uq_conversations_account_customer_active",
+            "instagram_account_id",
+            "customer_id",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index("ix_conversations_inbox", "organization_id", "state", "last_message_at"),
     )
 

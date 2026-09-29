@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 from arq import create_pool
@@ -23,28 +23,31 @@ from app.workers.queue import JobQueue
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    app.state.engine = create_engine(settings)
-    app.state.session_factory = create_session_factory(app.state.engine)
-    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=True)
-    arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-    app.state.job_queue = JobQueue(arq_pool, app.state.session_factory)
-    http_client = httpx.AsyncClient()
-    app.state.instagram_api = GraphInstagramApi(http_client, settings)
-    app.state.token_cipher = TokenCipher.from_settings(settings)
-    app.state.token_verifier = ClerkTokenVerifier(
-        fetch_jwks=http_jwks_fetcher(settings.clerk_jwks_url, http_client),
-        issuer=settings.clerk_issuer,
-        authorized_parties=settings.clerk_authorized_parties,
-        cache_seconds=settings.clerk_jwks_cache_seconds,
-        min_refetch_seconds=settings.clerk_jwks_min_refetch_seconds,
-    )
-    try:
+    async with AsyncExitStack() as stack:
+        engine = create_engine(settings)
+        stack.push_async_callback(engine.dispose)
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+        stack.push_async_callback(redis.aclose)
+        arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        stack.push_async_callback(arq_pool.aclose)
+        http_client = httpx.AsyncClient()
+        stack.push_async_callback(http_client.aclose)
+
+        app.state.engine = engine
+        app.state.session_factory = create_session_factory(engine)
+        app.state.redis = redis
+        app.state.job_queue = JobQueue(arq_pool, app.state.session_factory)
+        app.state.instagram_api = GraphInstagramApi(http_client, settings)
+        app.state.token_cipher = TokenCipher.from_settings(settings)
+        app.state.token_verifier = ClerkTokenVerifier(
+            fetch_jwks=http_jwks_fetcher(settings.clerk_jwks_url, http_client),
+            issuer=settings.clerk_issuer,
+            authorized_parties=settings.clerk_authorized_parties,
+            cache_seconds=settings.clerk_jwks_cache_seconds,
+            min_refetch_seconds=settings.clerk_jwks_min_refetch_seconds,
+            clock_skew_seconds=settings.clerk_clock_skew_seconds,
+        )
         yield
-    finally:
-        await http_client.aclose()
-        await arq_pool.aclose()
-        await app.state.redis.aclose()
-        await app.state.engine.dispose()
 
 
 def create_app() -> FastAPI:

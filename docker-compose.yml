@@ -1,3 +1,10 @@
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment: &backend-env
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
+    REDIS_URL: redis://redis:6379/0
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -25,31 +32,38 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
-    build: ./backend
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
-      REDIS_URL: redis://redis:6379/0
-    ports:
-      - "8000:8000"
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
+
+  api:
+    <<: *backend
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 
   worker:
-    build: ./backend
+    <<: *backend
     command: ["arq", "app.workers.settings.WorkerSettings"]
-    env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
-      REDIS_URL: redis://redis:6379/0
+      <<: *backend-env
       WORKER_QUEUE: maintenance
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 

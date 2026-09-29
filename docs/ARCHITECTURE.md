@@ -122,3 +122,66 @@ environment. The `maintenance` cron `refresh_instagram_tokens` (daily 04:07 UTC)
 
 Known constraint carried into Phase 13: DMs can only be sent to users who messaged first, within Meta's
 messaging window; the DM sender must enforce this and treat rejections as non-retryable.
+
+## Debug pass (2026-09-28)
+
+A full audit against a real Postgres/Redis and a running server (not just the test client) found and
+fixed:
+
+1. **Silent data loss on commit failure.** `SessionDep` used FastAPI's default dependency scope, where
+   the commit in `get_session` runs *after* the response is already sent — a failed commit (constraint
+   violation, serialization failure) looked like success to the caller. Fixed with
+   `Depends(get_session, scope="function")`, which runs commit/rollback before the response is sent.
+   Regression: `tests/test_unit_of_work.py`.
+2. **Unhandled exceptions lost the request ID and security headers**, because `BaseHTTPMiddleware`
+   can't attach headers to a response FastAPI's own exception middleware builds after an unhandled
+   error. Rewrote `RequestContextMiddleware` as pure ASGI so the 500 envelope is built *inside* it.
+   Also: a malicious/malformed client `X-Request-ID` (log injection, oversized) is now validated and
+   replaced. Regression: `tests/test_middleware.py`.
+3. **`.env.example` was invalid.** Inline `# comment` text after several values (e.g.
+   `CLERK_ISSUER=...  # https://...`) was parsed as part of the value, so a `docker compose up` using
+   the example file as a starting point would fail or misbehave. Comments now sit on their own line;
+   regression test parses the file with `python-dotenv` and asserts no value starts with `#`.
+4. **JWKS verifier availability.** An outage combined with concurrent requests could trigger one Clerk
+   fetch per request; a malformed JWKS document threw an unhandled `InvalidKeyError` instead of a 503;
+   an expired-cache-but-Clerk-still-down case discarded already-good keys. Now: at most one upstream
+   attempt per `min_refetch_seconds` regardless of concurrency, a failed refresh keeps serving cached
+   keys when possible, and any refresh failure is a clean `AUTH_PROVIDER_UNAVAILABLE`. Added
+   `CLERK_CLOCK_SKEW_SECONDS` (default 10) so minor client/server clock drift doesn't reject valid
+   tokens. Regression: `tests/test_security.py`.
+5. **OAuth callback did not re-check permission.** `oauth/start` correctly required
+   `settings_manage`, but the callback (driven by Meta's redirect, not a fresh bearer-authenticated
+   request) trusted the state alone. If the initiating member's role changed between start and
+   callback, the connection would still complete. Added `require_permission` re-check in
+   `complete_oauth`. Regression: `test_oauth_callback_rechecks_permission_if_role_changed_after_start`.
+6. **Config inconsistencies not caught at startup.** Comma-separated list settings
+   (`CORS_ALLOWED_ORIGINS`, `META_OAUTH_SCOPES`, etc.) were declared as plain `list[str]`, which
+   pydantic-settings tries to parse as JSON — every list-valued env var was silently broken. Fixed with
+   `NoDecode` plus explicit comma-splitting validators. Also added: production requires
+   `CLERK_AUTHORIZED_PARTIES` and `CORS_ALLOWED_ORIGINS` to be set; `JOB_REQUEUE_AFTER_SECONDS` must
+   exceed both `JOB_TIMEOUT_SECONDS` and `JOB_RETRY_CAP_SECONDS`, or a crashed job could be requeued
+   while still legitimately retrying. Regression: `tests/test_settings.py`.
+7. **Jobs stuck in PROCESSING were never recovered**, only PENDING ones — a worker killed mid-job left
+   its job permanently invisible to the sweeper. `requeue_stale_jobs` now also requeues PROCESSING rows
+   past the cutoff (safe: the arq job id deduplicates). Regression: `tests/integration/test_stuck_jobs.py`.
+8. **Soft-deleted rows blocked re-creation.** `customers` and `conversations` had plain unique
+   constraints on `(instagram_account_id, ...)`, so a soft-deleted row permanently blocked recreating
+   the same customer/conversation. Replaced with partial unique indexes (`WHERE deleted_at IS NULL`).
+   Migration `0003` backfills any non-conforming enum values before adding the free-text `applies_to`
+   / `off_hours_policy` columns' CHECK constraints, so it is safe against pre-existing data.
+   Regression: `tests/integration/test_soft_delete_uniqueness.py`.
+9. **Lifespan startup wasn't exception-safe.** If any step after acquiring the DB engine failed (e.g.
+   Redis unreachable), earlier resources (the engine) were never disposed. Rewrote with
+   `AsyncExitStack` so every acquired resource is released regardless of where startup fails.
+10. **`docker-compose.yml` never ran migrations** and the `worker` service was missing entirely (it was
+    only added to docs, not compose) after Phase 4. Added a one-shot `migrate` service that runs
+    `alembic upgrade head` before `api`/`worker` start, added the `worker` service, and added an API
+    healthcheck.
+11. Verified independently: `alembic check` after building the schema from models vs. from migrations
+    on a scratch database — zero diff in constraints or indexes. Confirmed with a real `uvicorn`
+    process (not just the ASGI test transport) that `/health`, `/ready`, security headers and 401s work
+    end-to-end.
+
+Net: went from "tests pass" to "tests pass and independently verified against running processes",
+with 45 new regression tests (53 -> 98) — one for every defect above, each checked to fail on the
+prior code.

@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
@@ -17,6 +18,19 @@ from tests.integration.helpers import run_alembic
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
 REDIS_URL = os.environ.get("TEST_REDIS_URL", "")
+
+
+def _refuse_unsafe_targets() -> None:
+    """These fixtures drop every table and flush Redis, so only disposable targets are allowed."""
+    if DATABASE_URL and not urlparse(DATABASE_URL).path.lstrip("/").endswith("_test"):
+        raise pytest.UsageError(
+            "TEST_DATABASE_URL must point at a database whose name ends in _test"
+        )
+    if REDIS_URL and urlparse(REDIS_URL).path.lstrip("/") in ("", "0"):
+        raise pytest.UsageError("TEST_REDIS_URL must select a dedicated Redis database (e.g. /1)")
+
+
+_refuse_unsafe_targets()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

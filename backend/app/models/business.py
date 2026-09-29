@@ -6,7 +6,13 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, SoftDelete, TenantOwned, Timestamps, UUIDPrimaryKey, enum_column
-from app.models.enums import CommentAction, CommunicationStyle, Intent, KnowledgeKind
+from app.models.enums import (
+    CommentAction,
+    CommunicationStyle,
+    KnowledgeKind,
+    OffHoursPolicy,
+    RuleScope,
+)
 
 
 class BusinessProfile(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
@@ -26,8 +32,10 @@ class BusinessProfile(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
     custom_instructions: Mapped[str | None] = mapped_column(Text)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     working_hours: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
-    off_hours_policy: Mapped[str] = mapped_column(
-        String(24), default="respond", server_default="respond"
+    off_hours_policy: Mapped[OffHoursPolicy] = mapped_column(
+        enum_column(OffHoursPolicy),
+        default=OffHoursPolicy.RESPOND,
+        server_default=OffHoursPolicy.RESPOND.value,
     )
     off_hours_message: Mapped[str | None] = mapped_column(Text)
 
@@ -85,8 +93,8 @@ class AutomationRule(UUIDPrimaryKey, TenantOwned, Timestamps, SoftDelete, Base):
     name: Mapped[str] = mapped_column(String(200))
     enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
     priority: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
-    applies_to: Mapped[str] = mapped_column(String(16))
-    trigger_intents: Mapped[list[Intent]] = mapped_column(ARRAY(String(40)))
+    applies_to: Mapped[RuleScope] = mapped_column(enum_column(RuleScope))
+    trigger_intents: Mapped[list[str]] = mapped_column(ARRAY(String(40)))
     action: Mapped[CommentAction | None] = mapped_column(enum_column(CommentAction))
     require_human: Mapped[bool] = mapped_column(default=False, server_default="false")
     notify_owner: Mapped[bool] = mapped_column(default=False, server_default="false")

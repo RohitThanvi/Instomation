@@ -290,6 +290,37 @@ async def test_staff_cannot_start_connection(
     assert response.status_code == 403
 
 
+async def test_oauth_callback_rechecks_permission_if_role_changed_after_start(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_api: FakeInstagramApi,
+) -> None:
+    fake_api.ig_user_id = f"ig-{uuid.uuid4().hex[:10]}"
+    owner = await _org_owner(client)
+    org_id = (await client.get("/api/v1/organizations", headers=_auth(owner))).json()["items"][0][
+        "id"
+    ]
+    start = await client.post("/api/v1/instagram/oauth/start", headers=_auth(owner))
+    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+
+    # Owner is demoted to STAFF after starting the flow but before Meta redirects back.
+    async with session_factory() as session:
+        member = (
+            await session.execute(
+                select(OrganizationMember).where(
+                    OrganizationMember.organization_id == uuid.UUID(org_id)
+                )
+            )
+        ).scalar_one()
+        member.role = MemberRole.STAFF
+        await session.commit()
+
+    response = await client.get(f"/api/v1/instagram/oauth/callback?code=abc&state={state}")
+    assert _reason(response)["reason"] == ["PERMISSION_DENIED"]
+    listing = (await client.get("/api/v1/instagram/accounts", headers=_auth(owner))).json()
+    assert listing["items"] == []
+
+
 async def test_capabilities_report_unsupported_features_as_disabled(
     client: httpx.AsyncClient,
 ) -> None:

@@ -1,7 +1,9 @@
+import asyncio
 import json
 import time
 from typing import Any
 
+import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -41,13 +43,17 @@ def _token(**overrides: Any) -> str:
     return jwt.encode(claims, PRIVATE_KEY, algorithm="RS256", headers={"kid": "key-1"})
 
 
-def _verifier(fetch_count: list[int] | None = None) -> ClerkTokenVerifier:
+def _verifier(
+    fetch_count: list[int] | None = None, skew: int = 0, document: dict[str, Any] | None = None
+) -> ClerkTokenVerifier:
     async def fetch() -> dict[str, Any]:
         if fetch_count is not None:
             fetch_count.append(1)
-        return {"keys": [PUBLIC_JWK]}
+        return document if document is not None else {"keys": [PUBLIC_JWK]}
 
-    return ClerkTokenVerifier(fetch, ISSUER, [ORIGIN], cache_seconds=3600, min_refetch_seconds=30)
+    return ClerkTokenVerifier(
+        fetch, ISSUER, [ORIGIN], cache_seconds=3600, min_refetch_seconds=30, clock_skew_seconds=skew
+    )
 
 
 async def test_valid_token_returns_identity() -> None:
@@ -95,3 +101,49 @@ def test_me_returns_identity() -> None:
     response = _client().get("/api/v1/auth/me", headers={"Authorization": f"Bearer {_token()}"})
     assert response.status_code == 200
     assert response.json() == {"clerk_user_id": "user_1"}
+
+
+async def test_small_clock_skew_is_tolerated_only_when_configured() -> None:
+    future = _token(iat=int(time.time()) + 5)
+    with pytest.raises(AppError):
+        await _verifier(skew=0).verify(future)
+    identity = await _verifier(skew=10).verify(future)
+    assert identity.clerk_user_id == "user_1"
+
+
+def _outage_verifier(fetches: list[int], calls: dict[str, bool]) -> ClerkTokenVerifier:
+    async def fetch() -> dict[str, Any]:
+        fetches.append(1)
+        if calls["down"]:
+            raise httpx.ConnectError("clerk unreachable")
+        return {"keys": [PUBLIC_JWK]}
+
+    return ClerkTokenVerifier(fetch, ISSUER, [ORIGIN], cache_seconds=60, min_refetch_seconds=30)
+
+
+async def test_cached_keys_keep_working_when_clerk_is_down() -> None:
+    fetches: list[int] = []
+    state = {"down": False}
+    verifier = _outage_verifier(fetches, state)
+    await verifier.verify(_token())
+    verifier._fetched_at -= 3600  # cache expired
+    verifier._last_attempt -= 3600
+    state["down"] = True
+    assert (await verifier.verify(_token())).clerk_user_id == "user_1"
+
+
+async def test_outage_causes_one_upstream_attempt_per_window() -> None:
+    fetches: list[int] = []
+    verifier = _outage_verifier(fetches, {"down": True})
+    results = await asyncio.gather(
+        *[verifier.verify(_token()) for _ in range(5)], return_exceptions=True
+    )
+    assert len(fetches) == 1
+    assert all(isinstance(r, AppError) and r.code == "AUTH_PROVIDER_UNAVAILABLE" for r in results)
+
+
+async def test_malformed_jwks_is_a_503_not_a_crash() -> None:
+    verifier = _verifier(document={"keys": [{"kid": "key-1", "kty": "RSA"}]})
+    with pytest.raises(AppError) as exc:
+        await verifier.verify(_token())
+    assert exc.value.code == "AUTH_PROVIDER_UNAVAILABLE"

@@ -16,7 +16,9 @@ from app.services.tenancy import TenantContext, get_or_create_user, resolve_tena
 _bearer = HTTPBearer(auto_error=False)
 ORGANIZATION_HEADER = "X-Organization-ID"
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# scope="function": commit/rollback run before the response is sent, so a failed commit
+# reaches the client as an error instead of a false success.
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def get_verifier(request: Request) -> ClerkTokenVerifier:

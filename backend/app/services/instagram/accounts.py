@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings
 from app.core.errors import AppError
+from app.core.rbac import Permission
 from app.models.enums import InstagramAccountStatus
 from app.models.instagram import InstagramAccount
 from app.services.audit import record_audit
 from app.services.instagram.client import InstagramApi, InstagramApiError
 from app.services.instagram.crypto import TokenCipher
-from app.services.tenancy import TenantContext
+from app.services.tenancy import TenantContext, require_permission
 
 logger = structlog.get_logger(__name__)
 
@@ -61,6 +62,7 @@ async def complete_oauth(
     organization_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> InstagramAccount:
+    await require_permission(session, user_id, organization_id, Permission.SETTINGS_MANAGE)
     try:
         short = await api.exchange_code(code)
         long_lived = await api.exchange_long_lived(short.access_token)

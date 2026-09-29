@@ -53,7 +53,9 @@ async def purge_finished_records(ctx: dict[str, Any]) -> None:
 
 
 async def requeue_stale_jobs(ctx: dict[str, Any]) -> None:
-    """Re-enqueue PENDING jobs whose Redis entry was lost (outage or crash before enqueue)."""
+    """Re-enqueue jobs whose Redis entry was lost (outage or crash before enqueue) and jobs stuck
+    in PROCESSING (worker killed, arq gave up). Safe because the arq job id deduplicates, and the
+    cutoff exceeds the job timeout and retry cap (enforced in Settings)."""
     factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
     settings: Settings = ctx["settings"]
     pool: ArqRedis = ctx["redis"]
@@ -62,7 +64,10 @@ async def requeue_stale_jobs(ctx: dict[str, Any]) -> None:
         stale = (
             await session.execute(
                 select(Job.id, Job.queue, Job.kind)
-                .where(Job.status == ProcessingStatus.PENDING, Job.updated_at < cutoff)
+                .where(
+                    Job.status.in_((ProcessingStatus.PENDING, ProcessingStatus.PROCESSING)),
+                    Job.updated_at < cutoff,
+                )
                 .order_by(Job.updated_at)
                 .limit(_REQUEUE_BATCH)
             )

@@ -22,6 +22,10 @@ def _envelope(code: str, message: str, status_code: int) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=body)
 
 
+def internal_error_response() -> JSONResponse:
+    return _envelope("INTERNAL_ERROR", "Something went wrong on our side.", 500)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
@@ -38,4 +42,4 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
         logger.error("unhandled_exception", exc_info=exc)
-        return _envelope("INTERNAL_ERROR", "Something went wrong on our side.", 500)
+        return internal_error_response()

@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
+from app.core.rbac import Permission, has_permission
 from app.models.enums import MemberRole
 from app.models.identity import Organization, OrganizationMember, User
 
@@ -32,6 +33,25 @@ async def get_or_create_user(session: AsyncSession, clerk_user_id: str) -> User:
     if user.deleted_at is not None:
         raise AppError("ACCOUNT_DISABLED", "This account is no longer active.", 403)
     return user
+
+
+async def require_permission(
+    session: AsyncSession, user_id: uuid.UUID, organization_id: uuid.UUID, permission: Permission
+) -> None:
+    """Re-check authorization outside a bearer-authenticated request (e.g. OAuth callbacks)."""
+    role = (
+        await session.execute(
+            select(OrganizationMember.role)
+            .join(Organization, Organization.id == OrganizationMember.organization_id)
+            .where(
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.organization_id == organization_id,
+                Organization.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if role is None or not has_permission(role, permission):
+        raise AppError("PERMISSION_DENIED", "You do not have permission to do this.", 403)
 
 
 async def resolve_tenant(

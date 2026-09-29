@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Annotated, Literal
 
 from cryptography.fernet import Fernet
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.workers.queues import QueueName
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     clerk_authorized_parties: CommaList = Field(default_factory=list)
     clerk_jwks_cache_seconds: int = Field(default=3600, ge=60)
     clerk_jwks_min_refetch_seconds: int = Field(default=30, ge=1)
+    clerk_clock_skew_seconds: int = Field(default=10, ge=0, le=60)
 
     # Fernet key for Instagram tokens; previous keys stay readable during rotation.
     token_encryption_key: SecretStr
@@ -97,6 +98,21 @@ class Settings(BaseSettings):
         for key in value:
             Fernet(key.get_secret_value())
         return value
+
+    @model_validator(mode="after")
+    def _consistent_configuration(self) -> "Settings":
+        if self.job_requeue_after_seconds <= max(
+            self.job_timeout_seconds, int(self.job_retry_cap_seconds)
+        ):
+            raise ValueError(
+                "JOB_REQUEUE_AFTER_SECONDS must exceed JOB_TIMEOUT_SECONDS "
+                "and JOB_RETRY_CAP_SECONDS"
+            )
+        if self.is_production and not (self.clerk_authorized_parties and self.cors_allowed_origins):
+            raise ValueError(
+                "CLERK_AUTHORIZED_PARTIES and CORS_ALLOWED_ORIGINS are required in production"
+            )
+        return self
 
     @property
     def is_production(self) -> bool:

@@ -6,12 +6,14 @@ from typing import Any
 
 import httpx
 import jwt
+import structlog
 from jwt import PyJWK
 
 from app.core.errors import AppError
 
 JwksFetcher = Callable[[], Awaitable[dict[str, Any]]]
 
+logger = structlog.get_logger(__name__)
 _ALLOWED_ALGORITHMS = ["RS256"]
 
 
@@ -50,15 +52,19 @@ class ClerkTokenVerifier:
         authorized_parties: list[str],
         cache_seconds: int,
         min_refetch_seconds: int,
+        clock_skew_seconds: int = 0,
     ) -> None:
         self._fetch_jwks = fetch_jwks
         self._issuer = issuer
         self._authorized_parties = frozenset(authorized_parties)
         self._cache_seconds = cache_seconds
         self._min_refetch_seconds = min_refetch_seconds
+        self._clock_skew_seconds = clock_skew_seconds
         self._keys: dict[str, PyJWK] = {}
         self._fetched_at = 0.0
+        self._last_attempt = float("-inf")
         self._lock = asyncio.Lock()
+        self._last_refresh_failed = False
 
     async def verify(self, token: str) -> Identity:
         try:
@@ -75,6 +81,7 @@ class ClerkTokenVerifier:
                 key.key,
                 algorithms=_ALLOWED_ALGORITHMS,
                 issuer=self._issuer,
+                leeway=self._clock_skew_seconds,
                 options={"require": ["exp", "iat", "sub", "iss"], "verify_aud": False},
             )
         except jwt.ExpiredSignatureError as exc:
@@ -89,29 +96,44 @@ class ClerkTokenVerifier:
 
     async def _key_for(self, kid: str) -> PyJWK:
         now = time.monotonic()
-        cache_expired = now - self._fetched_at > self._cache_seconds
-        if kid in self._keys and not cache_expired:
+        if kid in self._keys and now - self._fetched_at <= self._cache_seconds:
             return self._keys[kid]
 
         async with self._lock:
             now = time.monotonic()
-            cache_expired = now - self._fetched_at > self._cache_seconds
-            can_refetch = now - self._fetched_at >= self._min_refetch_seconds
-            if cache_expired or (kid not in self._keys and can_refetch):
-                await self._refresh()
+            cache_fresh = now - self._fetched_at <= self._cache_seconds
+            if kid in self._keys and cache_fresh:
+                return self._keys[kid]
+            # One upstream attempt per window, success or failure, so an outage or a stream
+            # of forged `kid`s cannot turn every request into a Clerk call.
+            if now - self._last_attempt >= self._min_refetch_seconds:
+                self._last_attempt = now
+                try:
+                    await self._refresh()
+                except AppError:
+                    if kid not in self._keys:
+                        raise
+                    logger.warning("jwks_refresh_failed_serving_cached_key")
         key = self._keys.get(kid)
         if key is None:
+            if self._last_refresh_failed:
+                raise AppError(
+                    "AUTH_PROVIDER_UNAVAILABLE", "Authentication is temporarily unavailable.", 503
+                )
             raise unauthenticated("Invalid authentication token.")
         return key
 
     async def _refresh(self) -> None:
         try:
             document = await self._fetch_jwks()
-        except (httpx.HTTPError, ValueError) as exc:
+            keys = {
+                jwk["kid"]: PyJWK.from_dict(jwk) for jwk in document.get("keys", []) if "kid" in jwk
+            }
+        except (httpx.HTTPError, ValueError, KeyError, jwt.PyJWTError) as exc:
+            self._last_refresh_failed = True
             raise AppError(
                 "AUTH_PROVIDER_UNAVAILABLE", "Authentication is temporarily unavailable.", 503
             ) from exc
-        self._keys = {
-            jwk["kid"]: PyJWK.from_dict(jwk) for jwk in document.get("keys", []) if "kid" in jwk
-        }
+        self._last_refresh_failed = False
+        self._keys = keys
         self._fetched_at = time.monotonic()
