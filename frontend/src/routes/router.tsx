@@ -38,7 +38,10 @@ export function createRoutes(env: Env): RouteObject[] {
                   children: [
                     {
                       index: true,
-                      lazy: async () => ({ Component: (await import('./home-page')).HomePage }),
+                      lazy: async () => ({
+                        Component: (await import('@/features/dashboard/dashboard-page'))
+                          .DashboardPage,
+                      }),
                     },
                     {
                       path: ROUTES.instagramSettings.slice(1),

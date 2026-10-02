@@ -1,3 +1,4 @@
+import type { DashboardOverview } from '@/api/analytics'
 import type { Organization } from '@/api/organizations'
 
 export const ORG_ID = '3f0c2a9e-6d4b-4c1a-9b7e-1a2b3c4d5e6f'
@@ -38,4 +39,22 @@ export function accountWire(overrides: Record<string, unknown> = {}) {
     token_expires_at: null,
     ...overrides,
   }
+}
+
+/** Test-only sample matching the UI's expected analytics contract. Never imported by app code. */
+export const DASHBOARD_OVERVIEW: DashboardOverview = {
+  range: '30d',
+  totals: {
+    messages_received: 1240,
+    ai_replies_sent: 880,
+    open_conversations: 37,
+    leads_captured: 52,
+    automation_rate: 0.62,
+  },
+  messages_over_time: [
+    { date: '2026-09-01', received: 40, ai_replies: 28, human_replies: 6 },
+    { date: '2026-09-02', received: 55, ai_replies: 41, human_replies: 9 },
+    { date: '2026-09-03', received: 31, ai_replies: 22, human_replies: 4 },
+  ],
+  conversations_by_state: { ai_active: 20, human_required: 5, human_active: 12, resolved: 60 },
 }

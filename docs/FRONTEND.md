@@ -25,7 +25,8 @@ src/config/      env parsing (Zod) and constants; nothing else reads import.meta
 src/api/         ApiClient, ApiError + envelope parsing, Zod schemas, one module per endpoint group
 src/auth/        Clerk-backed SessionProvider (API client, organizations, tenant selection), route guard
 src/components/  ui/ (primitives), layout/ (shell)
-src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabilities, OAuth result)
+src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabilities, OAuth result),
+                 dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
 ```
@@ -50,6 +51,9 @@ src/routes/      route components (lazy-loaded), providers, router
 - **OAuth return.** Meta returns to `/settings/instagram?status=connected|error&reason=CODE`. Every documented reason
   has its own message; unknown or malformed reasons get a generic one and query text is never echoed.
 - **Tenant keys.** Tenant data is cached under `tenantKey(orgId, ...)`, so switching workspaces cannot show stale rows.
+- **Dashboard.** The Instagram cards and the "reconnect" banner use live data and work for every role. Analytics are
+  gated by `analytics_view` (staff see an explanatory notice and no request is made). Charts always ship with a text
+  alternative: a labelled `role="img"` plus a data table.
 - **Not yet available.** Endpoints that do not exist yet (`business`, `settings`, and later `conversations`,
   `messages`, `comments`, `automations`, `knowledge`, `analytics`, `usage`) are typed in `src/api/` and reject with
   `NotYetAvailableError` without touching the network; the screen renders `<NotYetAvailable>`. No fabricated data,
@@ -65,8 +69,8 @@ src/routes/      route components (lazy-loaded), providers, router
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                  |
 | 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Steps 4-7 and activation are local-only: the backend endpoints do not exist yet |
-| 3. Dashboard                                                            | Next                                                                                  |
-| 4. Inbox                                                                | Planned                                                                               |
+| 3. Dashboard (live Instagram health + role-aware analytics placeholder) | Done. Analytics render "not yet available" until the endpoint ships                   |
+| 4. Inbox                                                                | Next                                                                                  |
 | 5. Automation rules                                                     | Planned                                                                               |
 | 6. Knowledge base                                                       | Planned                                                                               |
 | 7. Settings / usage / admin                                             | Planned                                                                               |
@@ -78,5 +82,11 @@ src/routes/      route components (lazy-loaded), providers, router
   notice from onboarding steps 4-7.
 - Onboarding has no server-side "completed" flag, so a user with a workspace is not forced back into it; the sidebar
   keeps a "Setup guide" link.
-- The initial bundle is dominated by Clerk (~570 kB min, ~170 kB gzip). Revisit chunking once more screens land.
+- The initial bundle is dominated by Clerk and React (~440 kB min, ~130 kB gzip). Recharts (~366 kB) is a separate
+  chunk loaded only when analytics data exists.
+- `src/api/analytics.ts` is the UI's _proposed_ contract (totals, messages per day, conversations by state). Reconcile
+  it with the real response when `/api/v1/analytics` ships, then add a range selector (7d/30d/90d; the API function
+  already takes a range) and replace the rejection in `fetchDashboardOverview` with `client.request`.
+- `GET /auth/me` has no caller now that the temporary "Signed in" card is gone (it was the only user, so the wrapper was
+  removed as dead code). Re-add `fetchIdentity` when a screen needs the identity, for example the admin flag.
 - No CSP header yet: Clerk's frontend API host is instance-specific and needs to be templated into nginx.
