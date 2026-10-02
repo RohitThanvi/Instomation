@@ -7,8 +7,8 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.base import utcnow
-from app.models.enums import ProcessingStatus
-from app.models.instagram import WebhookEvent
+from app.models.enums import InstagramAccountStatus, ProcessingStatus
+from app.models.instagram import InstagramAccount, Message, WebhookEvent
 from app.models.ops import Job
 from app.workers.queues import QueueName
 
@@ -74,18 +74,21 @@ async def push_to_redis(
         raise QueueUnavailableError(str(job_id)) from exc
 
 
-async def _process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+async def process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
     """EVENTS-queue handler: resolve the event to its tenant, dispatch, mark DONE.
 
     Import is local to avoid a circular import (this module is imported by app.main).
     """
     import uuid
 
+    from redis.asyncio import Redis
+
     from app.models.enums import ProcessingStatus
-    from app.services.events.dispatch import dispatch
+    from app.services.events.dispatch import EventContext, dispatch
     from app.workers.errors import RetryableJobError
 
     factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    redis: Redis = ctx["redis"]
     event_id = uuid.UUID(payload["webhook_event_id"])
     async with factory() as session:
         event = await session.get(WebhookEvent, event_id)
@@ -94,7 +97,7 @@ async def _process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) -
         if event.status is ProcessingStatus.DONE:
             return
         try:
-            await dispatch(session, event)
+            await dispatch(EventContext(session=session, redis=redis), event)
         except Exception as exc:
             event.status = ProcessingStatus.FAILED
             event.error_message = f"{type(exc).__name__}: {exc}"[:1000]
@@ -102,4 +105,69 @@ async def _process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) -
             raise RetryableJobError(str(exc)) from exc
         event.status = ProcessingStatus.DONE
         event.processed_at = utcnow()
+        await session.commit()
+
+
+async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """INSTAGRAM-queue handler: deliver one outbound Message via the Graph API.
+
+    Local imports avoid a circular import (this module is imported by app.main).
+    """
+    import uuid
+
+    from app.config.settings import Settings
+    from app.models.enums import DeliveryStatus
+    from app.services.instagram.capabilities import Capabilities, Feature
+    from app.services.instagram.client import InstagramApi, InstagramApiError
+    from app.services.instagram.crypto import TokenCipher, TokenDecryptionError
+    from app.workers.errors import RetryableJobError
+
+    factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    settings: Settings = ctx["settings"]
+    api: InstagramApi = ctx["instagram_api"]
+    cipher: TokenCipher = ctx["token_cipher"]
+    message_id = uuid.UUID(payload["message_id"])
+
+    async with factory() as session:
+        message = await session.get(Message, message_id)
+        if message is None:
+            return
+        if message.status is not DeliveryStatus.PENDING:
+            return  # already delivered or already given up on; never send twice
+
+        if not Capabilities(settings).is_enabled(Feature.DM_REPLY):
+            message.status = DeliveryStatus.SUPPRESSED
+            await session.commit()
+            return
+
+        account = await session.get(InstagramAccount, message.instagram_account_id)
+        if account is None or account.status != InstagramAccountStatus.ACTIVE:
+            message.status = DeliveryStatus.FAILED
+            await session.commit()
+            return
+
+        try:
+            token = cipher.decrypt(account.access_token_encrypted)
+            external_id = await api.send_dm(
+                token, account.external_account_id, payload["recipient_external_id"], message.body
+            )
+        except TokenDecryptionError:
+            message.status = DeliveryStatus.FAILED
+            await session.commit()
+            return
+        except InstagramApiError as exc:
+            if exc.is_token_error:
+                account.status = InstagramAccountStatus.TOKEN_EXPIRED
+                message.status = DeliveryStatus.FAILED
+                await session.commit()
+                return
+            if exc.is_retryable:
+                await session.commit()
+                raise RetryableJobError(str(exc), retry_after=exc.retry_after) from exc
+            message.status = DeliveryStatus.FAILED
+            await session.commit()
+            return
+
+        message.status = DeliveryStatus.SENT
+        message.external_message_id = external_id
         await session.commit()

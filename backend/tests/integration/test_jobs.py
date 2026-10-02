@@ -8,7 +8,6 @@ from arq.connections import RedisSettings
 from arq.jobs import Job as ArqJob
 from arq.jobs import JobStatus
 from redis.asyncio import Redis
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import get_settings
@@ -167,18 +166,19 @@ async def test_purge_removes_only_expired_finished_records(
     old_done = await _new_job(session_factory, ProcessingStatus.DONE, old)
     recent_done = await _new_job(session_factory, ProcessingStatus.DONE)
     old_pending = await _new_job(session_factory, ProcessingStatus.PENDING, old)
+    old_external_id = f"evt-{uuid.uuid4()}"
     async with session_factory() as session:
-        session.add(
-            WebhookEvent(
-                external_event_id=f"evt-{uuid.uuid4()}",
-                event_type="comments",
-                payload_hash="h",
-                payload_json={},
-                status=ProcessingStatus.DONE,
-                processed_at=utcnow() - timedelta(days=settings.webhook_event_retention_days + 1),
-            )
+        event = WebhookEvent(
+            external_event_id=old_external_id,
+            event_type="comments",
+            payload_hash="h",
+            payload_json={},
+            status=ProcessingStatus.DONE,
+            processed_at=utcnow() - timedelta(days=settings.webhook_event_retention_days + 1),
         )
+        session.add(event)
         await session.commit()
+        old_event_id = event.id
 
     await purge_finished_records(_ctx(session_factory))
 
@@ -186,9 +186,4 @@ async def test_purge_removes_only_expired_finished_records(
     assert await _status(session_factory, recent_done) is not None
     assert await _status(session_factory, old_pending) is not None
     async with session_factory() as session:
-        remaining = (
-            await session.execute(
-                select(WebhookEvent).where(WebhookEvent.status == ProcessingStatus.DONE)
-            )
-        ).all()
-    assert remaining == []
+        assert await session.get(WebhookEvent, old_event_id) is None

@@ -17,8 +17,9 @@ from app.models.identity import Organization
 from app.models.instagram import InstagramAccount, WebhookEvent
 from app.models.ops import Job
 from app.services.events import dispatch as dispatch_module
-from app.workers.queue import _process_webhook_event
+from app.workers.queue import process_webhook_event
 from app.workers.runtime import tracked
+from tests.integration.conftest import REDIS_URL
 
 
 class FakeVerifier:
@@ -213,7 +214,11 @@ async def test_get_verification_handshake(client: httpx.AsyncClient, monkeypatch
     assert bad.status_code == 403
 
 
-async def test_process_webhook_event_is_idempotent_and_dispatches_once(
+async def _redis_for_test() -> Redis:
+    return Redis.from_url(REDIS_URL, decode_responses=True)
+
+
+async def testprocess_webhook_event_is_idempotent_and_dispatches_once(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     account_id, org_id = await _connected_account(session_factory)
@@ -245,7 +250,7 @@ async def test_process_webhook_event_is_idempotent_and_dispatches_once(
     try:
 
         @dispatch_module.register("comments")
-        async def _handle(session: AsyncSession, evt: WebhookEvent) -> None:
+        async def _handle(event_ctx: object, evt: WebhookEvent) -> None:
             calls.append(evt.event_type)
 
         ctx = {
@@ -255,9 +260,10 @@ async def test_process_webhook_event_is_idempotent_and_dispatches_once(
                 3, 1.0, 8.0
             ),
             "job_try": 1,
+            "redis": await _redis_for_test(),
         }
-        await tracked(_process_webhook_event)(ctx, str(job_id))
-        await tracked(_process_webhook_event)(ctx, str(job_id))
+        await tracked(process_webhook_event)(ctx, str(job_id))
+        await tracked(process_webhook_event)(ctx, str(job_id))
     finally:
         dispatch_module._restore_for_tests(saved)
 

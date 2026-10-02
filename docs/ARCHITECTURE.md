@@ -211,3 +211,53 @@ prior code.
   never raises.
 - Verified against a real running server: valid handshake, wrong token, unsigned POST, tampered body,
   and a correctly HMAC-signed POST — all behave as specified.
+
+## Conversations and messages (Phase 9)
+
+- **Resolution services** (`app/services/conversations/`): `get_or_create_customer` and
+  `get_or_create_conversation` are race-safe upserts (`INSERT ... ON CONFLICT DO NOTHING` against the
+  Phase-debug partial unique indexes) so two concurrent webhook deliveries for a brand-new customer
+  never collide. `record_message` does the same keyed on `external_message_id` when one exists (inbound
+  messages/comments); a human's manual reply has no external id yet, so it is always inserted.
+- **Event handlers** (`app/services/events/handlers.py`, registered into the Phase 7-8 dispatch
+  registry): `handle_message` and `handle_comment` turn a persisted `WebhookEvent` into
+  customer + conversation + inbound message rows.
+  - **Loop protection:** if the event's sender/comment author is the connected account's own external
+    id, it is a self-echo (something we sent, delivered back through the webhook) and is skipped —
+    never recorded as a second inbound message.
+  - **Ordering:** a Redis lock keyed by `(instagram_account_id, external_user_id)` serializes all
+    processing for one customer, so messages that arrive close together are recorded in arrival order
+    even if their jobs run on different workers concurrently.
+- **`EventContext`** (`dispatch.py`) carries both the DB session and a Redis handle explicitly into
+  handlers, rather than smuggling Redis through session state.
+- **Conversation state machine:** `AI_ACTIVE -> HUMAN_REQUIRED -> HUMAN_ACTIVE -> RESOLVED`
+  (`app/services/conversations/conversations.py`). `request_human_handoff` is idempotent (a second
+  trigger on an already-human conversation is a no-op) and records a `human_handoffs` row. STAFF can
+  only see/act on conversations `assigned_user_id` points to them; a conversation outside their
+  assignment (or in another tenant) returns 404, not 403, so its existence isn't leaked.
+- **Human reply delivery:** `POST /conversations/{id}/messages` only works while the AI is silenced
+  (prevents a human and the AI racing to answer the same conversation), inserts the outbound Message as
+  PENDING immediately (visible in the inbox right away), and enqueues `send_instagram_message` on the
+  `instagram` queue — the actual Graph API call never happens inside the HTTP request. That handler
+  decrypts the account's token, checks `FEATURE_DM_REPLY` (suppresses without calling Instagram if the
+  capability is off), and classifies `InstagramApiError` exactly as Phase 6 does: retryable errors defer
+  via `RetryableJobError`, token errors flag the account `token_expired`, other errors mark the message
+  FAILED without retrying.
+- Verified against real running processes (uvicorn + a live `arq` worker on the `events` queue) with a
+  genuine HMAC-signed webhook POST: comment -> webhook_events row DONE -> customer/conversation/message
+  rows created, exactly as the unit tests assert. This caught a real bug the unit tests had missed (see
+  below).
+- Mutation-tested: loop protection, the human-takeover gate on manual replies, and STAFF conversation
+  scoping were each independently broken and confirmed to fail their respective tests.
+
+### Bug found only by running the real worker
+
+The EVENTS-queue handler was named `_process_webhook_event` (leading underscore) but jobs were enqueued
+under the string `"process_webhook_event"`. Every test called the wrapped handler directly
+(`tracked(process_webhook_event)(ctx, job_id)`), which works regardless of the function's name — so
+every test passed while the actual arq worker, which matches jobs to registered functions *by name*,
+would have logged `function 'process_webhook_event' not found` forever and silently never processed a
+single webhook event in production. Renamed to `process_webhook_event` to match; both queues'
+registered function names are now asserted to match their enqueue strings as part of this verification.
+This is the reason every phase in this project is checked against a real running server and worker, not
+just the test suite.

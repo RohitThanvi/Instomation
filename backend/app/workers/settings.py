@@ -5,6 +5,7 @@ from arq import cron
 from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+import app.services.events.handlers  # noqa: F401 - registers event handlers
 from app.config.settings import get_settings
 from app.core.logging import configure_logging
 from app.core.retry import RetryPolicy
@@ -16,7 +17,7 @@ from app.workers.maintenance import (
     refresh_instagram_tokens,
     requeue_stale_jobs,
 )
-from app.workers.queue import _process_webhook_event
+from app.workers.queue import process_webhook_event, send_instagram_message
 from app.workers.queues import QueueName
 from app.workers.runtime import tracked
 
@@ -24,7 +25,8 @@ _settings = get_settings()
 
 # Task handlers per queue. Later phases register their `tracked` handlers here.
 HANDLERS: dict[QueueName, list[Any]] = {
-    QueueName.EVENTS: [tracked(_process_webhook_event)],
+    QueueName.EVENTS: [tracked(process_webhook_event)],
+    QueueName.INSTAGRAM: [tracked(send_instagram_message)],
 }
 _CRON_JOBS = {
     QueueName.MAINTENANCE: [

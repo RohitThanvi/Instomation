@@ -179,3 +179,10 @@ verifies membership; with exactly one membership the header may be omitted. Pagi
 | DELETE | `/api/v1/instagram/accounts/{id}` | Disconnect (token wiped) |
 
 | GET/POST | `/api/v1/instagram/webhooks` | Meta verification handshake and event delivery. Unauthenticated by design (protected by `X-Hub-Signature-256` and, for GET, the verify token); never call it from the frontend. |
+
+| GET | `/api/v1/conversations` | Inbox list (paginated; filters `state`, `priority`, `is_lead`, `tag`). STAFF sees only conversations assigned to them. |
+| GET/PATCH | `/api/v1/conversations/{id}` | Fetch (marks read) / update priority, tags, lead flag |
+| POST | `/api/v1/conversations/{id}/takeover`, `/hand-back`, `/resolve` | Conversation state transitions |
+| GET | `/api/v1/conversations/{id}/messages` | Message history (paginated) |
+| POST | `/api/v1/conversations/{id}/messages` | Human reply — only while AI is silenced (`human_required`/`human_active`); delivered asynchronously via the `instagram` queue |
+| POST | `/api/v1/conversations/{id}/notes` | Internal note (never sent to Instagram) |
