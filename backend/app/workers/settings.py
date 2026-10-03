@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 from arq import cron
 from arq.connections import RedisSettings
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 import app.services.events.handlers  # noqa: F401 - registers event handlers
@@ -10,6 +11,9 @@ from app.config.settings import get_settings
 from app.core.logging import configure_logging
 from app.core.retry import RetryPolicy
 from app.db.session import create_engine, create_session_factory
+from app.services.ai.gateway import AIGateway
+from app.services.ai.providers.groq import GroqProvider
+from app.services.ai.providers.openai import OpenAIProvider
 from app.services.instagram.client import GraphInstagramApi
 from app.services.instagram.crypto import TokenCipher
 from app.workers.maintenance import (
@@ -47,6 +51,22 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
     ctx["http_client"] = http_client
     ctx["instagram_api"] = GraphInstagramApi(http_client, _settings)
     ctx["token_cipher"] = TokenCipher.from_settings(_settings)
+    redis_client = Redis.from_url(_settings.redis_url, decode_responses=True)
+    ctx["redis_client"] = redis_client
+    ctx["ai_gateway"] = AIGateway(
+        {
+            "groq": GroqProvider(
+                http_client, _settings.groq_api_key.get_secret_value(), _settings.groq_model
+            ),
+            "openai": OpenAIProvider(
+                http_client, _settings.openai_api_key.get_secret_value(), _settings.openai_model
+            ),
+        },
+        _settings.ai_primary_provider,
+        _settings.ai_fallback_provider,
+        redis_client,
+        _settings,
+    )
     ctx["retry_policy"] = RetryPolicy(
         max_attempts=_settings.job_max_tries,
         base_seconds=_settings.job_retry_base_seconds,
@@ -57,6 +77,8 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
 async def _on_shutdown(ctx: dict[str, Any]) -> None:
     http_client: httpx.AsyncClient = ctx["http_client"]
     await http_client.aclose()
+    redis_client: Redis = ctx["redis_client"]
+    await redis_client.aclose()
     engine: AsyncEngine = ctx["engine"]
     await engine.dispose()
 

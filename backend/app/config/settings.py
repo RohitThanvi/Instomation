@@ -61,6 +61,23 @@ class Settings(BaseSettings):
     feature_dm_reply: bool = True
     feature_private_reply: bool = True
 
+    # ---- AI gateway ----
+    ai_primary_provider: str = "groq"
+    ai_fallback_provider: str | None = None
+    groq_api_key: SecretStr = SecretStr("")
+    groq_model: str = "llama-3.3-70b-versatile"
+    openai_api_key: SecretStr = SecretStr("")
+    openai_model: str = "gpt-4o-mini"
+    ai_request_timeout_seconds: float = Field(default=20.0, gt=0)
+    ai_max_attempts: int = Field(default=3, ge=1)
+    ai_retry_base_seconds: float = Field(default=1.0, gt=0)
+    ai_retry_cap_seconds: float = Field(default=20.0, gt=0)
+    ai_circuit_failure_threshold: int = Field(default=5, ge=1)
+    ai_circuit_cooldown_seconds: int = Field(default=60, ge=1)
+    ai_rate_limit_per_minute: int = Field(default=60, ge=1)
+    ai_rate_limit_per_minute_per_tenant: int = Field(default=20, ge=1)
+    ai_default_max_tokens: int = Field(default=300, ge=1)
+
     worker_queue: QueueName = QueueName.MAINTENANCE
     worker_max_jobs: int = Field(default=10, ge=1)
     worker_poll_delay_seconds: float = Field(default=1.0, ge=0.1)

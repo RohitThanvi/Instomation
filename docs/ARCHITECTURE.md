@@ -261,3 +261,44 @@ single webhook event in production. Renamed to `process_webhook_event` to match;
 registered function names are now asserted to match their enqueue strings as part of this verification.
 This is the reason every phase in this project is checked against a real running server and worker, not
 just the test suite.
+
+## AI gateway (Phase 10)
+
+- **Provider abstraction** (`app/services/ai/provider.py`): the `AIProvider` protocol is the only
+  thing business code depends on. `OpenAICompatibleProvider` implements it once for any
+  OpenAI-style `/chat/completions` API; `GroqProvider` and `OpenAIProvider` just supply the base URL,
+  key and default model. Adding a new provider (or a self-hosted one) never touches the gateway.
+- **`AIGateway.complete`** (`app/services/ai/gateway.py`) is the single entry point. Per attempt:
+  circuit breaker check -> layered rate limit (provider-wide, then per-tenant) -> timeout -> call. A
+  retryable failure (`AIProviderError.is_retryable`: timeout, 5xx, 429) is retried with the Phase-4
+  `RetryPolicy` (exponential backoff + jitter, honoring a provider's `Retry-After`); a non-retryable
+  one (4xx other than 429) fails immediately without burning the retry budget. Once the primary
+  provider's attempts are exhausted, the gateway falls through to the configured fallback provider
+  once — never rotates API keys to dodge a rate limit.
+- **Two independent rate-limit layers**, both backed by the Phase-4 `RateLimiter`:
+  `AI_RATE_LIMIT_PER_MINUTE` (shared across every tenant — protects the account-wide capacity Groq or
+  OpenAI actually grants) and `AI_RATE_LIMIT_PER_MINUTE_PER_TENANT` (keeps one organization from
+  starving every other tenant of that shared capacity). They are genuinely separate settings/counters,
+  not the same number applied twice.
+- **Circuit breaker** (`app/services/ai/circuit_breaker.py`): Redis-backed, atomic via a single Lua
+  script. After `AI_CIRCUIT_FAILURE_THRESHOLD` consecutive failures a provider is skipped entirely
+  (no call made at all) for `AI_CIRCUIT_COOLDOWN_SECONDS`; one success resets the count.
+- **Cost tracking** (`app/services/ai/pricing.py`, `usage.py`): every successful completion can be
+  recorded to `ai_usage` with provider, model, token counts, latency and an estimated cost from a
+  per-1K-token price table. An unpriced (provider, model) pair costs 0 rather than raising, so usage
+  is never lost over a pricing-table gap.
+- Wired into both the API process and every worker process (`app/main.py`, `app/workers/settings.py`),
+  each with its own `AIGateway` instance sharing the process's Redis connection.
+
+### Bugs found and fixed during this phase's own verification
+
+Caught by the gateway's integration tests themselves (mutation-tested, not just "tests pass"):
+1. An editing mistake left the per-tenant rate-limit rule using the *provider-wide* limit setting
+   instead of the per-tenant one — the two layers were not actually independent as designed, which a
+   genuine cross-tenant isolation test caught immediately.
+2. A prior phase's blind find-and-replace (renaming `_process_webhook_event`, see the Phase 9 entry
+   above) had also silently mangled a *test function's name* (`test_process_webhook_event...` became
+   `testprocess_webhook_event...`, since the old name is a substring of the new one), which hid that
+   test from pytest's collection entirely — a passing suite was quietly missing a test. Both are why
+   this project greps for suspicious naming after any blind rename and re-counts the test total after
+   every phase, not just reads "all tests pass".

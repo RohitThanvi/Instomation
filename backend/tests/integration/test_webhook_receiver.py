@@ -218,7 +218,7 @@ async def _redis_for_test() -> Redis:
     return Redis.from_url(REDIS_URL, decode_responses=True)
 
 
-async def testprocess_webhook_event_is_idempotent_and_dispatches_once(
+async def test_process_webhook_event_is_idempotent_and_dispatches_once(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     account_id, org_id = await _connected_account(session_factory)
