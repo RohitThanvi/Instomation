@@ -1,27 +1,14 @@
 import { useAuth } from '@clerk/clerk-react'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
-import { createApiClient, type ApiClient } from '@/api/client'
+import { createApiClient } from '@/api/client'
 import { queryKeys } from '@/api/keys'
-import { fetchOrganizations, type Organization } from '@/api/organizations'
+import { collectPages } from '@/api/pagination'
+import { fetchOrganizations } from '@/api/organizations'
 import { SessionContext, type SessionValue } from './session-context'
 import { STORAGE_KEYS } from '@/config/constants'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { createTenantHeader } from '@/lib/tenant-header'
-
-async function fetchAllOrganizations(
-  client: ApiClient,
-  signal: AbortSignal,
-): Promise<Organization[]> {
-  const all: Organization[] = []
-  let cursor: string | null = null
-  do {
-    const page = await fetchOrganizations(client, cursor, signal)
-    all.push(...page.items)
-    cursor = page.next_cursor
-  } while (cursor !== null)
-  return all
-}
 
 export function SessionProvider({
   apiBaseUrl,
@@ -48,7 +35,7 @@ export function SessionProvider({
 
   const query = useQuery({
     queryKey: queryKeys.organizations,
-    queryFn: ({ signal }) => fetchAllOrganizations(client, signal),
+    queryFn: ({ signal }) => collectPages((cursor) => fetchOrganizations(client, cursor, signal)),
     enabled: isSignedIn === true,
   })
 

@@ -15,13 +15,13 @@ const ORG_A = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'Alpha',
   account_type: 'business',
-  role: 'OWNER',
+  role: 'owner',
 }
 const ORG_B = {
   id: '22222222-2222-4222-8222-222222222222',
   name: 'Beta',
   account_type: 'creator',
-  role: 'STAFF',
+  role: 'staff',
 }
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 })

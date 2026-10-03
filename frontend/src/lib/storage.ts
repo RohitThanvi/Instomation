@@ -14,3 +14,11 @@ export function writeStorage(key: string, value: string): void {
     // Persisting the selection is a convenience; ignore failure.
   }
 }
+
+export function removeStorage(key: string): void {
+  try {
+    window.localStorage.removeItem(key)
+  } catch {
+    // Nothing to clean up if storage is unavailable.
+  }
+}

@@ -36,7 +36,9 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
   - `GET /api/v1/organizations` (paginated, the caller's organizations with their role)
   - `GET /api/v1/organizations/current/members` (paginated) -> `{ membership_id, user_id, email, full_name, role }`
   - `PATCH|DELETE /api/v1/organizations/current/members/{membership_id}` (`{ role }`; needs `members_manage`)
-  - `GET /api/v1/instagram/capabilities` -> `[{ feature, enabled, reason }]`; comment like / bio / photo are
+  - `GET /api/v1/instagram/capabilities` -> `[{ feature, enabled, reason }]` where `feature` is `FEATURE_COMMENT_REPLY`,
+    `FEATURE_COMMENT_LIKE`, `FEATURE_DM_REPLY`, `FEATURE_PRIVATE_REPLY`, `FEATURE_PROFILE_BIO_UPDATE` or
+    `FEATURE_PROFILE_PHOTO_UPDATE`; comment like / bio / photo are
     always disabled (Meta exposes no API): never render controls for a disabled capability.
   - `POST /api/v1/instagram/oauth/start` -> `{ authorization_url }`: navigate the browser to it. Meta returns to
     the backend, which redirects to `<origin>/settings/instagram?status=connected` or
@@ -47,7 +49,8 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
     granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
     `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
   - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
-- Roles: OWNER, ADMIN, MANAGER, STAFF. Hide or disable UI by role, but the server is authoritative (403).
+- Roles: `owner`, `admin`, `manager`, `staff` (lowercase on the wire, as are all enum values such as instagram
+  account `status` and `account_type`). Hide or disable UI by role, but the server is authoritative (403).
 - Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,knowledge,analytics,settings,usage}`.
   Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
