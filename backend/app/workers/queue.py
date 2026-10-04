@@ -96,8 +96,9 @@ async def process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) ->
             return
         if event.status is ProcessingStatus.DONE:
             return
+        event_ctx = EventContext(session=session, redis=redis)
         try:
-            await dispatch(EventContext(session=session, redis=redis), event)
+            await dispatch(event_ctx, event)
         except Exception as exc:
             event.status = ProcessingStatus.FAILED
             event.error_message = f"{type(exc).__name__}: {exc}"[:1000]
@@ -106,6 +107,12 @@ async def process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) ->
         event.status = ProcessingStatus.DONE
         event.processed_at = utcnow()
         await session.commit()
+
+    for deferred in event_ctx.deferred_jobs:
+        try:
+            await push_to_redis(ctx["redis"], deferred.job_id, deferred.queue, deferred.function)
+        except QueueUnavailableError:
+            break  # rows are committed and PENDING; requeue_stale_jobs delivers them later
 
 
 async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None:

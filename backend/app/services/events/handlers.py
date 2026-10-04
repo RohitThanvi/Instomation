@@ -7,14 +7,17 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import structlog
+from sqlalchemy import select
 
 from app.core.locks import locked
+from app.models.business import AiSettings
 from app.models.enums import DeliveryStatus, MessageDirection, MessageOrigin
-from app.models.instagram import WebhookEvent
-from app.services.conversations.conversations import get_or_create_conversation
+from app.models.instagram import Conversation, Message, WebhookEvent
+from app.services.conversations.conversations import get_or_create_conversation, is_ai_silenced
 from app.services.conversations.customers import get_or_create_customer
 from app.services.conversations.messages import record_message, resolve_account_external_id
 from app.services.events.dispatch import EventContext, register
+from app.workers.queues import QueueName
 
 logger = structlog.get_logger(__name__)
 
@@ -24,6 +27,33 @@ _LOCK_WAIT_SECONDS = 5.0
 
 def _conversation_lock_key(instagram_account_id: uuid.UUID, external_user_id: str) -> str:
     return f"instomation:conv_lock:{instagram_account_id}:{external_user_id}"
+
+
+async def _defer_moderation(
+    ctx: EventContext,
+    organization_id: uuid.UUID,
+    conversation: Conversation,
+    message: Message | None,
+    *,
+    comment: bool,
+) -> None:
+    """Every inbound message the AI may answer is safety-classified first. Nothing is queued for a
+    redelivered message (already handled), a conversation a human owns, or an organization that has
+    not switched this kind of automation on (so no model quota is spent on it)."""
+    if message is None or is_ai_silenced(conversation):
+        return
+    settings = (
+        await ctx.session.execute(
+            select(AiSettings).where(AiSettings.organization_id == organization_id)
+        )
+    ).scalar_one_or_none()
+    if settings is None:
+        return
+    if not (settings.comment_automation_enabled if comment else settings.dm_automation_enabled):
+        return
+    await ctx.defer_job(
+        QueueName.AI, "moderate_message", {"message_id": str(message.id)}, organization_id
+    )
 
 
 async def _with_conversation_lock(
@@ -73,7 +103,7 @@ async def handle_message(ctx: EventContext, event: WebhookEvent) -> None:
         conversation = await get_or_create_conversation(
             ctx.session, organization_id, instagram_account_id, customer.id
         )
-        await record_message(
+        message = await record_message(
             ctx.session,
             organization_id,
             instagram_account_id,
@@ -84,6 +114,7 @@ async def handle_message(ctx: EventContext, event: WebhookEvent) -> None:
             status=DeliveryStatus.RECEIVED,
             external_message_id=mid,
         )
+        await _defer_moderation(ctx, organization_id, conversation, message, comment=False)
 
     await _with_conversation_lock(ctx, instagram_account_id, sender_id, work)
 
@@ -117,7 +148,7 @@ async def handle_comment(ctx: EventContext, event: WebhookEvent) -> None:
         conversation = await get_or_create_conversation(
             ctx.session, organization_id, instagram_account_id, customer.id
         )
-        await record_message(
+        message = await record_message(
             ctx.session,
             organization_id,
             instagram_account_id,
@@ -128,5 +159,6 @@ async def handle_comment(ctx: EventContext, event: WebhookEvent) -> None:
             status=DeliveryStatus.RECEIVED,
             external_message_id=f"comment:{comment_id}",
         )
+        await _defer_moderation(ctx, organization_id, conversation, message, comment=True)
 
     await _with_conversation_lock(ctx, instagram_account_id, author_id, work)

@@ -65,8 +65,10 @@ class Settings(BaseSettings):
     ai_primary_provider: str = "groq"
     ai_fallback_provider: str | None = None
     groq_api_key: SecretStr = SecretStr("")
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.3-70b-versatile"
     openai_api_key: SecretStr = SecretStr("")
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     ai_request_timeout_seconds: float = Field(default=20.0, gt=0)
     ai_max_attempts: int = Field(default=3, ge=1)
@@ -77,6 +79,18 @@ class Settings(BaseSettings):
     ai_rate_limit_per_minute: int = Field(default=60, ge=1)
     ai_rate_limit_per_minute_per_tenant: int = Field(default=20, ge=1)
     ai_default_max_tokens: int = Field(default=300, ge=1)
+
+    # ---- Moderation (safety classifier; runs before any AI response generation) ----
+    # Instagram caps DMs at 1000 bytes and comments at 2200 characters, so longer input cannot come
+    # from Meta. Rather than truncating (which lets an attacker pad a threat past the cut), such
+    # input is escalated to a human unclassified.
+    moderation_max_input_chars: int = Field(default=2200, ge=50)
+    moderation_max_tokens: int = Field(default=60, ge=20)
+    # Below this self-reported confidence a non-threat verdict is not trusted; a human decides.
+    moderation_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    # Structural spam limits (cheap, deterministic, and they protect AI quota from spam floods).
+    moderation_max_links: int = Field(default=2, ge=0)
+    moderation_max_mentions: int = Field(default=5, ge=0)
 
     worker_queue: QueueName = QueueName.MAINTENANCE
     worker_max_jobs: int = Field(default=10, ge=1)

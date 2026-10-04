@@ -15,7 +15,15 @@ logger = structlog.get_logger(__name__)
 
 
 class AIGatewayError(Exception):
-    """Every configured provider failed or was unavailable (circuit open, rate limited, no key)."""
+    """Every configured provider failed or was unavailable (circuit open, rate limited, no key).
+
+    `retry_after` is the longest wait any provider asked for (Retry-After, rate-limit window, or
+    circuit cooldown), so a caller that defers the work can avoid retrying into the same wall.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +78,7 @@ class AIGateway:
         organization_id: str | None = None,
     ) -> AICompletion:
         attempts: list[_Attempt] = []
+        retry_after: float | None = None
         order = [self._primary] + ([self._fallback] if self._fallback else [])
         for provider_name in order:
             provider = self._providers.get(provider_name)
@@ -80,12 +89,18 @@ class AIGateway:
                     provider, messages, max_tokens, temperature, organization_id
                 )
             except (AIProviderError, CircuitOpenError) as exc:
+                hint = (
+                    exc.retry_after if isinstance(exc, AIProviderError) else exc.retry_after_seconds
+                )
+                if hint is not None:
+                    retry_after = max(retry_after or 0.0, hint)
                 attempts.append(_Attempt(provider_name, str(exc)))
                 logger.warning(
                     "ai_provider_failed", provider=provider_name, error=str(exc), falling_back=True
                 )
         raise AIGatewayError(
-            "All AI providers failed: " + "; ".join(f"{a.provider}: {a.error}" for a in attempts)
+            "All AI providers failed: " + "; ".join(f"{a.provider}: {a.error}" for a in attempts),
+            retry_after=retry_after,
         )
 
     async def _call_with_resilience(

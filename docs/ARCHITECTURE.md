@@ -302,3 +302,59 @@ Caught by the gateway's integration tests themselves (mutation-tested, not just 
    test from pytest's collection entirely — a passing suite was quietly missing a test. Both are why
    this project greps for suspicious naming after any blind rename and re-counts the test total after
    every phase, not just reads "all tests pass".
+
+## Moderation (Phase 11)
+
+Every inbound message the AI might answer is safety-classified **before** any reply is generated.
+Categories: `clean`, `spam`, `sexual`, `offensive`, `threat`.
+
+- **Trigger** (`app/services/events/handlers.py::_defer_moderation`): after `handle_message` /
+  `handle_comment` records a *new* inbound message, a `moderate_message` job is added to the `ai`
+  queue. Skipped for: a redelivered message (nothing new recorded), a conversation a human owns, and
+  organizations whose `ai_settings` has that automation (`dm_automation_enabled` /
+  `comment_automation_enabled`) off or unset, so no model quota is spent where the AI will not reply.
+- **Transactional deferral** (`EventContext.defer_job`): the `jobs` row is written in the *same
+  transaction* as the message; `process_webhook_event` pushes it to Redis only **after** commit. A job
+  therefore can never run before its message exists, and a Redis outage leaves a PENDING row for the
+  existing `requeue_stale_jobs` sweeper.
+- **Pipeline** (`app/services/moderation/service.py`): deterministic rules first
+  (`rules.py`: more than `MODERATION_MAX_LINKS` links or `MODERATION_MAX_MENTIONS` mentions is spam
+  with no model call; input over `MODERATION_MAX_INPUT_CHARS` is *not truncated* - truncation would let
+  padding push a threat past the cut - and is escalated unclassified). Otherwise the
+  `ModerationClassifier` asks the AI gateway (temperature 0) for `{"category", "confidence"}`.
+- **Policy** (`policy.py`) fails closed: the **only** path to `allow` is a confident `clean`.
+  `threat` escalates at *any* confidence (a false alarm costs a glance; a miss is the failure being
+  prevented) and opens a `THREAT` handoff (conversation -> `human_required`, priority high).
+  `spam`/`sexual`/`offensive` above `MODERATION_MIN_CONFIDENCE` are `block` (no reply, no human needed;
+  message `intent` is set). Low confidence, unparseable or off-schema model output, and oversized input
+  are `escalate` with `LOW_CONFIDENCE`.
+- **Persisted contract:** `messages.moderation = {action, category, source, confidence}`, where `source`
+  is `rules`, `model` or `fail_safe`. **Phases 13-14 must generate a reply only for a message whose
+  `moderation.action == "allow"`;** a missing value means "not yet moderated", never "safe". The message
+  text itself is not copied into this record.
+- **Provider outage:** `AIGatewayError` becomes `RetryableJobError`, honoring the longest
+  `retry_after` any provider reported (gateway now carries it). The message stays unmoderated, and so
+  unanswerable, until a retry succeeds or the job is FAILED and visible to admins. Verified against
+  running processes: an unreachable model tripped the circuit breaker and jobs were deferred ~60s.
+- **Prompt-injection defense** (engineering rule 8): the message is passed only as a `json.dumps`
+  string literal (no raw newlines or quote break-out), the system prompt declares it untrusted data,
+  and output is validated against a closed schema, so injected text can at worst *choose* a category,
+  never emit free text. An injection that convinces the model to say `clean` is a residual risk of any
+  LLM classifier; the rules layer and the live test set below are the mitigations, not a guarantee.
+- **Usage:** each classification is recorded in `ai_usage` with `purpose="moderation"`.
+- **Also in this phase:** `GROQ_BASE_URL` / `OPENAI_BASE_URL` settings (self-hosted or proxy
+  endpoints, and what makes the running-process verification possible), one shared
+  `build_ai_gateway` for the API and workers, `AIGatewayError.retry_after`, and
+  `META_WEBHOOK_VERIFY_TOKEN` defaulted in `tests/conftest.py` (five webhook tests only passed when
+  that variable happened to be exported in the developer's shell).
+
+### Verification status
+
+Verified: 190 tests against real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`;
+14 targeted mutations of the safety logic (each caught by a test; one initially survived, exposing a
+missing "flag explicitly off" test, now added); and an end-to-end run of real `uvicorn` + `arq`
+(`events` and `ai`) processes with genuinely HMAC-signed webhooks (clean -> allow, threat -> escalate +
+handoff, spam -> block, link flood -> rules without a model call, redelivery -> no second job).
+**Not yet verified:** classification quality against the real Groq model. The development sandbox
+could not reach the provider, so the model endpoint was a local stub. Run
+`GROQ_API_KEY=... TEST_REDIS_URL=... pytest tests/test_moderation_live.py -v` to check it.

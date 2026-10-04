@@ -22,7 +22,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 7-8 | Webhook receiver + event queue | Done (signed receiver, dedup, fast-return, EVENTS queue dispatch) |
 | 9 | Conversations / messages | Done (customer/conversation/message resolution, event handlers, inbox API, human takeover) |
 | 10 | AI gateway | Done (Groq/OpenAI abstraction, retry/backoff, circuit breaker, layered rate limits, cost tracking) |
-| 11 | Moderation | Planned |
+| 11 | Moderation | Done (rules + LLM safety classifier, fail-closed policy, runs on the `ai` queue before any reply; live-provider check pending, see below) |
 | 12 | Knowledge base | Planned |
 | 13-14 | DM + comment automation | Planned |
 | 15 | Human takeover | Planned |
@@ -152,7 +152,7 @@ cd backend
 WORKER_QUEUE=maintenance arq app.workers.settings.WorkerSettings   # one process per queue
 ```
 
-Queues: `events`, `ai`, `instagram`, `maintenance`. A worker refuses to start for a queue with no
+Queues: `events`, `ai` (moderation; reply generation joins in Phases 13-14), `instagram`, `maintenance`. A worker refuses to start for a queue with no
 registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.py`) and registered in
 `app/workers/settings.py::HANDLERS`. Full design in `docs/ARCHITECTURE.md`.
 
