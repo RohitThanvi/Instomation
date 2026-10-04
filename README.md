@@ -20,8 +20,9 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
 | 7-8 | Webhook receiver + event queue | Done (signed receiver, dedup, fast-return, EVENTS queue dispatch) |
-| 9 | Conversations / messages | Planned |
-| 10-11 | AI gateway + moderation | Planned |
+| 9 | Conversations / messages | Done (customer/conversation/message resolution, event handlers, inbox API, human takeover) |
+| 10 | AI gateway | Done (Groq/OpenAI abstraction, retry/backoff, circuit breaker, layered rate limits, cost tracking) |
+| 11 | Moderation | Planned |
 | 12 | Knowledge base | Planned |
 | 13-14 | DM + comment automation | Planned |
 | 15 | Human takeover | Planned |
