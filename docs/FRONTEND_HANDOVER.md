@@ -10,13 +10,16 @@ Before writing code, read `README.md`, `docs/ARCHITECTURE.md` and `docs/DATABASE
 optimised code, tests with features.
 
 ## Goal
+
 Build `frontend/` as a Vite SPA for an AI-powered Instagram marketing assistant (multi-tenant SaaS).
 
 ## Stack (fixed)
+
 React, Vite, TypeScript (strict), React Router, Tailwind CSS, shadcn/ui, TanStack Query,
 React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No Next.js.**
 
 ## Backend contract (current state; do not invent endpoints)
+
 - Base URL from env `VITE_API_BASE_URL`; never hardcode it. Send `Authorization: Bearer <Clerk session token>`
   on every API call and an `X-Request-ID` (8-64 chars of `A-Za-z0-9._-`; anything else is replaced server-side).
 - Errors always use `{ "error": { "code": string, "message": string } }`. Build one API client that parses this
@@ -46,17 +49,23 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
     `INSTAGRAM_ACCOUNT_NOT_PROFESSIONAL`, `ACCOUNT_ALREADY_CONNECTED`, `PERMISSION_DENIED`,
     `INSTAGRAM_UNAVAILABLE`, `INSTAGRAM_CONNECTION_FAILED`, `INTERNAL_ERROR`). Handle every reason with a clear message.
   - `GET /api/v1/instagram/accounts` (paginated) -> `{ id, username, status: active|token_expired|disconnected,
-    granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
+granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
     `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
   - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
 - Roles: `owner`, `admin`, `manager`, `staff` (lowercase on the wire, as are all enum values such as instagram
   account `status` and `account_type`). Hide or disable UI by role, but the server is authoritative (403).
-- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,knowledge,analytics,settings,usage}`.
+- **Conversations are live** (inbox): `GET /api/v1/conversations` (filters `state|priority|is_lead|tag`, oldest first),
+  `GET|PATCH /conversations/{id}`, `POST /conversations/{id}/{takeover,hand-back,resolve}`,
+  `GET|POST /conversations/{id}/messages` (reply only while `human_required|human_active`, else 409), and
+  `POST /conversations/{id}/notes`. Enums are lowercase (`ai_active`, `human_required`, `human_active`, `resolved`).
+  Codes: `CONVERSATION_NOT_FOUND` (404), `CONVERSATION_NOT_HUMAN_CONTROLLED` (409).
+- Planned, not built yet: `/api/v1/{comments,automations,business,knowledge,analytics,settings,usage}`.
   Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
 - Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.
 
 ## Screens (in this order)
+
 1. Auth shell (Clerk sign-in/up), protected routes, app layout, error boundary, toasts.
 2. Onboarding (9 steps): welcome, account type (creator/business/agency), connect Instagram, profile,
    products/services, communication style (strict business / professional / moderately casual /
@@ -72,6 +81,7 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
 8. RBAC-aware UI (OWNER, ADMIN, MANAGER, STAFF): hide or disable by role, but the server is the authority.
 
 ## Design
+
 Premium modern light SaaS: clean, serene, mature, vibrant accent used sparingly, strong typography,
 generous whitespace, subtle shadows, refined borders, smooth transitions. Not dark, not neon, no
 gradient overload, no "AI" clichés. Suitable for both influencers and professional businesses.
@@ -80,13 +90,15 @@ Tabs, Card, Badge, Avatar, Toast, Dropdown, DataTable, Chart, ChatBubble, Conver
 StatusIndicator, EmptyState, LoadingSkeleton, ErrorState. Design tokens via Tailwind theme, no magic values.
 
 ## Quality bar
+
 Strict TS, no `any`, Zod-validated API responses and forms, route-level code splitting, TanStack Query
 caching with sensible invalidation, accessible (keyboard, ARIA, contrast), ESLint + Prettier, Vitest +
 Testing Library for components and hooks. Add `frontend/Dockerfile` (multi-stage, static serve) and a
 `frontend` service in `docker-compose.yml`. Document env vars in `.env.example` (`VITE_API_BASE_URL`,
-`VITE_CLERK_PUBLISHABLE_KEY`). 
+`VITE_CLERK_PUBLISHABLE_KEY`).
 
 ## Workflow
+
 Work in small commits, one screen or feature at a time, and update the README phase table and add
 `docs/FRONTEND.md` (structure, conventions, how to run and test). Run backend locally with
 `docker compose up -d` plus `alembic upgrade head` (see README).

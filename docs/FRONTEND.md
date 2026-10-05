@@ -26,6 +26,7 @@ src/api/         ApiClient, ApiError + envelope parsing, Zod schemas, one module
 src/auth/        Clerk-backed SessionProvider (API client, organizations, tenant selection), route guard
 src/components/  ui/ (primitives), layout/ (shell)
 src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabilities, OAuth result),
+                 inbox/ (list, thread, composer, customer context, filters),
                  dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
@@ -54,8 +55,22 @@ src/routes/      route components (lazy-loaded), providers, router
 - **Dashboard.** The Instagram cards and the "reconnect" banner use live data and work for every role. Analytics are
   gated by `analytics_view` (staff see an explanatory notice and no request is made). Charts always ship with a text
   alternative: a labelled `role="img"` plus a data table.
-- **Not yet available.** Endpoints that do not exist yet (`business`, `settings`, and later `conversations`,
-  `messages`, `comments`, `automations`, `knowledge`, `analytics`, `usage`) are typed in `src/api/` and reject with
+- **Inbox.** Backed by the live conversations API (`src/api/conversations.ts`, hooks in `features/inbox/use-inbox.ts`).
+  The UI shows what the server returns and does no optimistic updates: every action returns the updated conversation,
+  which replaces the cached copy, and lists are then refetched. Rules it enforces, mirroring the backend:
+  - A person can reply only while the conversation is `human_required` or `human_active` (the server answers 409
+    `CONVERSATION_NOT_HUMAN_CONTROLLED` otherwise). The composer also closes when `FEATURE_DM_REPLY` is off. If a reply
+    is rejected, the draft is kept and the conversation is re-synced.
+  - Internal notes go to `/notes`, are rendered as team-only cards, and never carry a delivery status.
+  - Delivery is shown truthfully: `pending` (and polls faster), `failed` and `suppressed` each have a caption.
+  - AI confidence is shown only for AI messages and only for values within 0 to 1.
+  - Assignee names are not resolvable from the browser (the member list needs `members_manage`), so only "You" (staff),
+    "A team member" or "Unassigned" is shown.
+  - **Server limits.** The API filters by `state`, `priority`, `is_lead` and `tag` only, orders by creation time **oldest
+    first**, and has no text search or latest-activity sort. Search and sort therefore run in the browser over what is
+    loaded, and the list says so.
+- **Not yet available.** Endpoints that do not exist yet (`business`, `settings`, and later `comments`,
+  `automations`, `knowledge`, `analytics`, `usage`) are typed in `src/api/` and reject with
   `NotYetAvailableError` without touching the network; the screen renders `<NotYetAvailable>`. No fabricated data,
   no fake success. Onboarding answers for steps 4-7 stay in this browser (per workspace) until
   `saveBusinessSetup` can call a real endpoint.
@@ -70,13 +85,23 @@ src/routes/      route components (lazy-loaded), providers, router
 | 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                  |
 | 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Steps 4-7 and activation are local-only: the backend endpoints do not exist yet |
 | 3. Dashboard (live Instagram health + role-aware analytics placeholder) | Done. Analytics render "not yet available" until the endpoint ships                   |
-| 4. Inbox                                                                | Next                                                                                  |
-| 5. Automation rules                                                     | Planned                                                                               |
+| 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
+| 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Planned                                                                               |
 | 7. Settings / usage / admin                                             | Planned                                                                               |
 | 8. Role-aware UI (permission helper, applied per screen)                | Planned                                                                               |
 
 ## Known follow-ups
+
+- **Inbox list order (backend).** `GET /conversations` pages by `created_at` ascending (`keyset_page`), so page 1 of a
+  large inbox is the _oldest_ 50 conversations and a new one needing a person can be several "Load more" clicks away.
+  The index `ix_conversations_inbox (organization_id, state, last_message_at)` suggests newest-activity-first was the
+  intent. A newest-first option (and a `q` search parameter) on the API would let the browser stop sorting and
+  searching locally. Until then, filtering by status ("Needs a person") is the reliable way to triage.
+- **Assignment (backend).** `assigned_user_id` is only ever set by taking a conversation over, and staff see only
+  conversations assigned to them, so a staff member has no way to receive one yet. The inbox is correct for them; it is
+  simply empty until an assign endpoint exists.
+- `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.
 
 - When `/api/v1/business` and `/api/v1/settings` ship, implement `saveBusinessSetup` and remove the local-only
   notice from onboarding steps 4-7.

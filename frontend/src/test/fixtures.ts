@@ -58,3 +58,56 @@ export const DASHBOARD_OVERVIEW: DashboardOverview = {
   ],
   conversations_by_state: { ai_active: 20, human_required: 5, human_active: 12, resolved: 60 },
 }
+
+/** A valid v4-shaped UUID derived from a number, so fixtures stay readable and unique. */
+export function uuid(n: number): string {
+  return `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`
+}
+
+export const CONVERSATION_ID = uuid(100)
+export const CUSTOMER_ID = uuid(200)
+export const TEAMMATE_ID = uuid(300)
+
+/** `ConversationOut` exactly as the backend serializes it (lowercase enums, `Z` timestamps). */
+export function conversationWire(overrides: Record<string, unknown> = {}) {
+  return {
+    id: CONVERSATION_ID,
+    instagram_account_id: '9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d',
+    customer: {
+      id: CUSTOMER_ID,
+      external_user_id: '17841400000000001',
+      username: 'maya.k',
+      display_name: 'Maya Kapoor',
+    },
+    state: 'ai_active',
+    priority: 'normal',
+    last_intent: 'price_query',
+    is_lead: false,
+    tags: [] as string[],
+    summary: null,
+    unread_count: 2,
+    assigned_user_id: null,
+    last_message_at: '2026-10-04T09:30:00.123456Z',
+    created_at: '2026-10-03T08:00:00.000000Z',
+    ...overrides,
+  }
+}
+
+let messageCounter = 1000
+
+/** `MessageOut` as the backend serializes it. Defaults to an inbound customer message. */
+export function messageWire(overrides: Record<string, unknown> = {}) {
+  messageCounter += 1
+  return {
+    id: uuid(messageCounter),
+    direction: 'inbound',
+    origin: 'customer',
+    body: 'Hi! How much is the starter kit?',
+    status: 'received',
+    intent: null,
+    ai_confidence: null,
+    author_user_id: null,
+    created_at: '2026-10-04T09:00:00.000000Z',
+    ...overrides,
+  }
+}

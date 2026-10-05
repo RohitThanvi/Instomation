@@ -44,6 +44,12 @@ export function createRoutes(env: Env): RouteObject[] {
                       }),
                     },
                     {
+                      path: `${ROUTES.inbox.slice(1)}/:conversationId?`,
+                      lazy: async () => ({
+                        Component: (await import('@/features/inbox/inbox-page')).InboxPage,
+                      }),
+                    },
+                    {
                       path: ROUTES.instagramSettings.slice(1),
                       lazy: async () => ({
                         Component: (await import('./instagram-settings-page'))

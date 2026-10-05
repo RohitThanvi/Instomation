@@ -3,11 +3,18 @@ import { vi, type Mock } from 'vitest'
 export interface RecordedCall {
   method: string
   path: string
+  query: URLSearchParams
   headers: Headers
   body: unknown
 }
 
-type Handler = (call: RecordedCall) => { status?: number; body?: unknown }
+interface MockResponse {
+  status?: number
+  body?: unknown
+}
+
+/** May be async, so a test can hold a response open to observe the in-flight UI. */
+type Handler = (call: RecordedCall) => MockResponse | Promise<MockResponse>
 
 /**
  * Installs a fake `fetch` keyed by "METHOD /path". Any request without a handler fails the
@@ -26,6 +33,7 @@ export function installMockApi(handlers: Record<string, Handler>): {
     const call: RecordedCall = {
       method,
       path: url.pathname,
+      query: url.searchParams,
       headers: new Headers(init?.headers),
       body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
     }
@@ -34,9 +42,9 @@ export function installMockApi(handlers: Record<string, Handler>): {
     if (handler === undefined) {
       return Promise.reject(new Error(`Unexpected request: ${method} ${url.pathname}`))
     }
-    const { status = 200, body } = handler(call)
-    return Promise.resolve(
-      new Response(body === undefined ? null : JSON.stringify(body), { status }),
+    return Promise.resolve(handler(call)).then(
+      ({ status = 200, body }) =>
+        new Response(body === undefined ? null : JSON.stringify(body), { status }),
     )
   })
   vi.stubGlobal('fetch', fetchMock)

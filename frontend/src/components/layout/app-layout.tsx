@@ -1,5 +1,5 @@
 import { UserButton } from '@clerk/clerk-react'
-import { LayoutDashboard, Plug, Rocket } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Brand } from './brand'
 import { OrganizationSwitcher } from './organization-switcher'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 
 const NAV_ITEMS = [
   { to: ROUTES.home, label: 'Overview', icon: LayoutDashboard },
+  { to: ROUTES.inbox, label: 'Inbox', icon: MessageSquare },
   { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
   { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },
 ] as const
@@ -22,7 +23,7 @@ export function AppLayout() {
             <NavLink
               key={to}
               to={to}
-              end
+              end={to === ROUTES.home}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -48,7 +49,7 @@ export function AppLayout() {
             <UserButton />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 md:px-8">
+        <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 md:px-8">
           <Outlet />
         </main>
       </div>
