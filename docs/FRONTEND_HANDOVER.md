@@ -49,9 +49,21 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
     granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
     `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
   - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
+  - Knowledge base (needs `settings_manage`, i.e. owner/admin; manager and staff get 403, so hide the screen):
+    - `GET /api/v1/knowledge/entries?kind=&cursor=&limit=` (paginated, oldest first) -> `{ id, kind:
+      faq|product|service|policy|website|custom, title, content, attributes, created_at, updated_at }`
+    - `POST /api/v1/knowledge/entries` `{ kind, title, content, attributes? }` -> 201 entry. Limits: title 1-300,
+      content 1-4000 characters (trimmed); `attributes` is a flat object of at most 20 keys (names 1-50 chars,
+      values string <=500 / number / boolean / null; no nesting). 409 `KNOWLEDGE_LIMIT_REACHED` when the
+      organization is at its entry cap: show the message, do not retry.
+    - `GET|PATCH|DELETE /api/v1/knowledge/entries/{id}`. PATCH is partial (omit a field to keep it; null is not
+      accepted; send `attributes: {}` to clear them); an empty PATCH is 422. DELETE returns 204.
+    - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
+      first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
+      Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.
 - Roles: `owner`, `admin`, `manager`, `staff` (lowercase on the wire, as are all enum values such as instagram
   account `status` and `account_type`). Hide or disable UI by role, but the server is authoritative (403).
-- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,knowledge,analytics,settings,usage}`.
+- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,analytics,settings,usage}`.
   Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
 - Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.

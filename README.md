@@ -23,7 +23,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 9 | Conversations / messages | Done (customer/conversation/message resolution, event handlers, inbox API, human takeover) |
 | 10 | AI gateway | Done (Groq/OpenAI abstraction, retry/backoff, circuit breaker, layered rate limits, cost tracking) |
 | 11 | Moderation | Done (rules + LLM safety classifier, fail-closed policy, runs on the `ai` queue before any reply; live-provider check pending, see below) |
-| 12 | Knowledge base | Planned |
+| 12 | Knowledge base | Done (entries CRUD + full-text retrieval API, per-org cap, tenant-scoped, audited; website/file ingestion not included) |
 | 13-14 | DM + comment automation | Planned |
 | 15 | Human takeover | Planned |
 | 16-18 | Dashboard, analytics, usage/cost | Planned |

@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     ai_rate_limit_per_minute_per_tenant: int = Field(default=20, ge=1)
     ai_default_max_tokens: int = Field(default=300, ge=1)
 
+    # ---- Knowledge base ----
+    # Per-organization cap on active entries; plan-based limits (Phase 17-18) will supersede it.
+    knowledge_max_entries: int = Field(default=500, ge=1)
+    # Retrieval turns free text into OR-ed word terms: shorter words are noise ("do", "is", "to"),
+    # and the cap bounds query cost against very long messages.
+    knowledge_search_min_term_length: int = Field(default=3, ge=1)
+    knowledge_search_max_terms: int = Field(default=12, ge=1)
+
     # ---- Moderation (safety classifier; runs before any AI response generation) ----
     # Instagram caps DMs at 1000 bytes and comments at 2200 characters, so longer input cannot come
     # from Meta. Rather than truncating (which lets an attacker pad a threat past the cut), such

@@ -36,5 +36,7 @@ PostgreSQL is the source of truth. Models live in `backend/app/models/`, migrati
 - `instagram_accounts.access_token_encrypted` holds Fernet ciphertext; plaintext tokens are never stored.
 - `knowledge_entries.search_vector` is a generated `tsvector` with a GIN index (full-text retrieval
   now; vector search can be added later without changing callers).
+- Non-ASCII full-text matching (e.g. Devanagari) needs a UTF-8 database with a non-`C` ctype such as `C.UTF-8` or
+  `en_US.UTF-8`; verify it when choosing a managed PostgreSQL provider.
 - `audit_logs` has no foreign keys on purpose: rows outlive deleted users and organizations.
 - Plan limits are data (`plan_limits`, per-org `usage_limits`), never hard-coded.

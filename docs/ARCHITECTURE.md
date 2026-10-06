@@ -358,3 +358,44 @@ handoff, spam -> block, link flood -> rules without a model call, redelivery -> 
 **Not yet verified:** classification quality against the real Groq model. The development sandbox
 could not reach the provider, so the model endpoint was a local stub. Run
 `GROQ_API_KEY=... TEST_REDIS_URL=... pytest tests/test_moderation_live.py -v` to check it.
+
+## Knowledge base (Phase 12)
+
+Per-organization facts the assistant may answer from: `knowledge_entries` (`kind` faq / product / service /
+policy / website / custom, `title`, `content`, flat `attributes`). Managed through `/api/v1/knowledge/*`
+(`app/api/v1/knowledge.py`), which requires `SETTINGS_MANAGE` (owner, admin).
+
+- **Tenancy and lifecycle:** every query filters by the server-resolved `organization_id` and
+  `deleted_at IS NULL`; cross-tenant ids are 404, never 403, so existence is not disclosed. Delete is soft.
+  Create/update/delete write `audit_logs` rows containing only `entry_id` and `kind`, never content.
+- **Entry cap:** `KNOWLEDGE_MAX_ENTRIES` (default 500) active entries per organization, enforced in
+  `create_entry` under a transaction-scoped Postgres advisory lock keyed on the organization, because a plain
+  count-then-insert lets concurrent requests jointly exceed the cap (verified: with a shared instead of an
+  exclusive lock the concurrency test fails). Plan-based limits (Phases 17-18) will supersede this setting.
+- **Retrieval** (`services/knowledge/search.py::search_entries`, also exposed as `POST /knowledge/search`):
+  the query text is reduced to distinct lower-cased words of at least `KNOWLEDGE_SEARCH_MIN_TERM_LENGTH`
+  characters (at most `KNOWLEDGE_SEARCH_MAX_TERMS`), joined with `|`, and run through `to_tsquery('simple', ...)`
+  against the generated `search_vector` (GIN index), ranked by `ts_rank_cd`. Words are OR-ed because a customer's
+  question rarely contains every word of the right entry. **Only sanitized word tokens reach `to_tsquery`**:
+  customer text can never inject tsquery operators or raise a syntax error (tested with hostile input, and with
+  the sanitizer mutated away). Tokenization checks Unicode categories (letters, combining marks, digits) instead
+  of `\w`, which omits the marks Indic scripts use and would split "डिलीवरी" into fragments (caught by the Hindi test).
+- **Known limits:** lexical only. The `simple` configuration does no stemming or synonyms, so "shipping" does not
+  match "ships", and a question phrased with none of an entry's words finds nothing. Vector search can replace
+  `search_entries` behind the same signature. Non-ASCII matching depends on the database using a UTF-8 encoding
+  with a non-`C` ctype (`C.UTF-8` or `en_US.UTF-8`; verified on `C.UTF-8`), so check this on the managed provider.
+- **For Phases 13-14 (rule 8):** retrieved `title`, `content` and `attributes` are untrusted data, not
+  instructions. Render them into the prompt as escaped data inside a delimited block, cap the total size, and never
+  let an entry change the system prompt, even though only admins write them (a compromised admin account, or
+  later imported website text, is exactly the case this defends).
+- **Not in this phase:** website crawling and file upload (`knowledge_documents` is unused until then). Fetching
+  user-supplied URLs is an SSRF surface (private ranges, redirects, DNS rebinding) and needs its own design.
+
+### Verification status
+
+190 -> 253 passing tests plus 8 live skipped (real PostgreSQL + Redis, clean migrated DB), `ruff`, `mypy --strict`;
+20 targeted mutations of the tenancy, soft-delete, cap, lock, RBAC, sanitizer, ranking and tokenizer logic, all
+caught (the advisory-lock mutant was re-run in a form that compiles, 3/3 caught by the concurrency test); and a
+run against a real `uvicorn` with RS256 JWTs verified against a locally served JWKS: CRUD, English and Hindi
+retrieval, manager 403, cross-tenant 404/403, hostile search text 200, and unknown-`kid`, expired and
+wrong-issuer tokens all 401. Not verified: behavior on a managed PostgreSQL provider (collation, see above).
