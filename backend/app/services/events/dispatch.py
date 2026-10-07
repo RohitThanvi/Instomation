@@ -15,9 +15,8 @@ import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import ProcessingStatus
 from app.models.instagram import WebhookEvent
-from app.models.ops import Job
+from app.workers.jobs import add_job
 from app.workers.queues import QueueName
 
 logger = structlog.get_logger(__name__)
@@ -46,15 +45,7 @@ class EventContext:
         """Record follow-up work in the same transaction as the handler's writes. The caller of
         `dispatch` pushes it to Redis only after that transaction commits, so a job can never run
         before the rows it refers to exist; if the push fails the PENDING row is swept up later."""
-        job = Job(
-            organization_id=organization_id,
-            queue=queue.value,
-            kind=function,
-            status=ProcessingStatus.PENDING,
-            payload=payload,
-        )
-        self.session.add(job)
-        await self.session.flush()
+        job = await add_job(self.session, queue, function, payload, organization_id)
         self.deferred_jobs.append(DeferredJob(job.id, queue, function))
 
 

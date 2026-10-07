@@ -2,13 +2,10 @@
 raised, usage recorded. Real PostgreSQL and Redis; only the model's answer is scripted."""
 
 import uuid
-from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-import pytest_asyncio
-from arq import create_pool
-from arq.connections import ArqRedis, RedisSettings
+from arq.connections import ArqRedis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,7 +22,6 @@ from app.workers.errors import RetryableJobError
 from app.workers.moderation import moderate_message
 from app.workers.queues import QueueName
 from app.workers.runtime import tracked
-from tests.integration.conftest import REDIS_URL
 from tests.integration.test_conversations_flow import _deliver_inbound_message, _org_and_account
 
 
@@ -46,20 +42,6 @@ class ScriptedGateway:
         if isinstance(self.reply, AIGatewayError):
             raise self.reply
         return AICompletion(self.reply, "groq", "m", 20, 8, 5)
-
-
-@pytest_asyncio.fixture
-async def cipher() -> TokenCipher:
-    return TokenCipher.from_settings(get_settings())
-
-
-@pytest_asyncio.fixture
-async def pool() -> AsyncIterator[ArqRedis]:
-    pool = await create_pool(RedisSettings.from_dsn(REDIS_URL))
-    await pool.flushdb()
-    yield pool
-    await pool.flushdb()
-    await pool.aclose()
 
 
 async def _enable_automation(
@@ -108,10 +90,11 @@ async def _moderation_jobs(
 
 
 async def _run(
-    factory: async_sessionmaker[AsyncSession], gateway: ScriptedGateway, job: Job
+    factory: async_sessionmaker[AsyncSession], gateway: ScriptedGateway, job: Job, pool: ArqRedis
 ) -> None:
     ctx: dict[str, Any] = {
         "session_factory": factory,
+        "redis": pool,
         "settings": get_settings(),
         "ai_gateway": gateway,
         "retry_policy": RetryPolicy(3, 1.0, 8.0),
@@ -153,7 +136,11 @@ async def test_job_is_committed_with_the_message_and_pushed_to_redis_after_commi
     queued = await pool.queued_jobs(queue_name=QueueName.AI.redis_key)
     assert [q.job_id for q in queued] == [str(job.id)]
     message, *_ = await _state(session_factory, org_id)
-    assert job.payload == {"message_id": str(message.id)}
+    assert job.payload == {
+        "message_id": str(message.id),
+        "organization_id": str(org_id),
+        "channel": "dm",
+    }
 
 
 async def test_clean_message_is_allowed_and_usage_is_recorded(
@@ -162,7 +149,7 @@ async def test_clean_message_is_allowed_and_usage_is_recorded(
     org_id, _ = await _inbound(session_factory, pool, cipher, "Hi, do you ship abroad?")
     (job,) = await _moderation_jobs(session_factory, org_id)
     gateway = ScriptedGateway('{"category": "clean", "confidence": 0.93}')
-    await _run(session_factory, gateway, job)
+    await _run(session_factory, gateway, job, pool)
 
     message, conversation, handoffs, usage = await _state(session_factory, org_id)
     assert message.moderation == {
@@ -181,7 +168,9 @@ async def test_threat_silences_the_ai_and_raises_a_high_priority_handoff(
 ) -> None:
     org_id, _ = await _inbound(session_factory, pool, cipher, "I know where you live")
     (job,) = await _moderation_jobs(session_factory, org_id)
-    await _run(session_factory, ScriptedGateway('{"category": "threat", "confidence": 0.4}'), job)
+    await _run(
+        session_factory, ScriptedGateway('{"category": "threat", "confidence": 0.4}'), job, pool
+    )
 
     message, conversation, handoffs, _ = await _state(session_factory, org_id)
     assert message.moderation is not None and message.moderation["action"] == "escalate"
@@ -200,7 +189,10 @@ async def test_blocked_categories_get_no_reply_path_and_no_handoff(
     org_id, _ = await _inbound(session_factory, pool, cipher, f"{category} text")
     (job,) = await _moderation_jobs(session_factory, org_id)
     await _run(
-        session_factory, ScriptedGateway(f'{{"category": "{category}", "confidence": 0.9}}'), job
+        session_factory,
+        ScriptedGateway(f'{{"category": "{category}", "confidence": 0.9}}'),
+        job,
+        pool,
     )
     message, conversation, handoffs, _ = await _state(session_factory, org_id)
     assert message.moderation is not None and message.moderation["action"] == "block"
@@ -219,7 +211,7 @@ async def test_unusable_or_unsure_output_escalates_instead_of_allowing(
 ) -> None:
     org_id, _ = await _inbound(session_factory, pool, cipher, "hello")
     (job,) = await _moderation_jobs(session_factory, org_id)
-    await _run(session_factory, ScriptedGateway(reply), job)
+    await _run(session_factory, ScriptedGateway(reply), job, pool)
     message, conversation, handoffs, _ = await _state(session_factory, org_id)
     assert message.moderation is not None and message.moderation["action"] == "escalate"
     assert conversation.state is ConversationState.HUMAN_REQUIRED
@@ -233,7 +225,7 @@ async def test_link_flood_is_spam_without_calling_the_model(
     org_id, _ = await _inbound(session_factory, pool, cipher, text)
     (job,) = await _moderation_jobs(session_factory, org_id)
     gateway = ScriptedGateway('{"category": "clean", "confidence": 1}')
-    await _run(session_factory, gateway, job)
+    await _run(session_factory, gateway, job, pool)
     message, *_, usage = await _state(session_factory, org_id)
     assert gateway.calls == [] and usage == []
     assert message.moderation is not None and message.moderation["source"] == "rules"
@@ -247,7 +239,7 @@ async def test_message_text_reaches_the_model_only_as_an_escaped_json_string(
     org_id, _ = await _inbound(session_factory, pool, cipher, hostile)
     (job,) = await _moderation_jobs(session_factory, org_id)
     gateway = ScriptedGateway('{"category": "offensive", "confidence": 0.9}')
-    await _run(session_factory, gateway, job)
+    await _run(session_factory, gateway, job, pool)
     system, user = gateway.calls[0]
     assert system.role == "system" and hostile not in system.content
     assert user.role == "user" and "\n" not in user.content
@@ -261,7 +253,7 @@ async def test_gateway_outage_retries_and_leaves_the_message_unmoderated(
     (job,) = await _moderation_jobs(session_factory, org_id)
     gateway = ScriptedGateway(AIGatewayError("down", retry_after=7.0))
     with pytest.raises(Exception) as excinfo:  # arq Retry from tracked()
-        await _run(session_factory, gateway, job)
+        await _run(session_factory, gateway, job, pool)
     assert not isinstance(excinfo.value, RetryableJobError)
     message, conversation, handoffs, usage = await _state(session_factory, org_id)
     assert message.moderation is None and handoffs == [] and usage == []
@@ -277,13 +269,13 @@ async def test_rerunning_the_job_does_not_classify_twice(
     org_id, _ = await _inbound(session_factory, pool, cipher, "hello")
     (job,) = await _moderation_jobs(session_factory, org_id)
     gateway = ScriptedGateway('{"category": "clean", "confidence": 0.9}')
-    await _run(session_factory, gateway, job)
+    await _run(session_factory, gateway, job, pool)
     async with session_factory() as session:  # simulate a requeue of an already-handled message
         stored = await session.get(Job, job.id)
         assert stored is not None
         stored.status = ProcessingStatus.PENDING
         await session.commit()
-    await _run(session_factory, gateway, job)
+    await _run(session_factory, gateway, job, pool)
     assert len(gateway.calls) == 1
 
 

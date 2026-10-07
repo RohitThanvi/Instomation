@@ -88,6 +88,18 @@ class Settings(BaseSettings):
     knowledge_search_min_term_length: int = Field(default=3, ge=1)
     knowledge_search_max_terms: int = Field(default=12, ge=1)
 
+    # ---- DM auto-reply ----
+    dm_reply_history_messages: int = Field(default=10, ge=1)  # recent turns given to the model
+    dm_reply_knowledge_entries: int = Field(default=5, ge=0)  # entries retrieved per reply
+    dm_reply_knowledge_max_chars: int = Field(default=3000, ge=0)  # total retrieved text budget
+    # Instagram rejects DMs over 1000 bytes; a longer model answer is escalated, never truncated.
+    dm_reply_max_bytes: int = Field(default=1000, ge=100)
+    # Meta only allows replies within this window after the customer's message (a late retry after
+    # an outage must not try to send outside it).
+    dm_reply_window_hours: int = Field(default=24, ge=1)
+    # Headroom on top of the organization's max_response_tokens for the JSON wrapper.
+    dm_reply_json_overhead_tokens: int = Field(default=80, ge=0)
+
     # ---- Moderation (safety classifier; runs before any AI response generation) ----
     # Instagram caps DMs at 1000 bytes and comments at 2200 characters, so longer input cannot come
     # from Meta. Rather than truncating (which lets an attacker pad a threat past the cut), such

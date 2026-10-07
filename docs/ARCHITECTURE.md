@@ -399,3 +399,57 @@ caught (the advisory-lock mutant was re-run in a form that compiles, 3/3 caught 
 run against a real `uvicorn` with RS256 JWTs verified against a locally served JWKS: CRUD, English and Hindi
 retrieval, manager 403, cross-tenant 404/403, hostile search text 200, and unknown-`kid`, expired and
 wrong-issuer tokens all 401. Not verified: behavior on a managed PostgreSQL provider (collation, see above).
+
+## DM auto-reply (Phase 13)
+
+`moderate_message` (Phase 11) chains to `generate_dm_reply` **only** for a DM whose verdict is `allow`
+(`payload.channel == "dm"`; comments stop there until Phase 14). The follow-up job is written in the same
+transaction as the verdict (`app/workers/jobs.py::add_job`) and pushed to Redis after commit; the sweeper covers a
+failed push. `app/services/automation/dm_reply.py` then either queues one reply or decides not to.
+
+- **Reasons not to answer** (`_skip_reason`, evaluated before the model call **and again under a conversation row
+  lock right before the reply is recorded**, because the model call takes seconds): message not moderated
+  `allow` (`NOT_CLEARED`), `dm_automation_enabled` off, conversation not AI-active, message older than
+  `DM_REPLY_WINDOW_HOURS`, a human or AI reply already exists after it, a newer answerable customer message exists
+  (a burst gets one reply to the latest, with the whole exchange as context; a newer message that was blocked or
+  escalated does not take the reply), and `max_replies_per_conversation_per_hour` reached (loop protection).
+- **Prompt** (`prompt.py`): fixed rules, then business profile and the top `DM_REPLY_KNOWLEDGE_ENTRIES` knowledge
+  hits as a single `json.dumps` block, so stored text cannot pose as instructions (rule 8). Retrieval query is the
+  last two customer messages so a keyword-less follow-up still finds its entry. Entries that do not fit
+  `DM_REPLY_KNOWLEDGE_MAX_CHARS` are skipped whole. History is the last `DM_REPLY_HISTORY_MESSAGES` turns, excluding
+  internal notes and messages moderation blocked or escalated.
+- **Fail closed:** the model must return `{reply, confidence, needs_human}` (strict schema). A human is asked
+  instead of anything being sent when: output is unparseable (`LOW_CONFIDENCE`), `needs_human` (`MISSING_INFORMATION`),
+  confidence is below the organization's `confidence_threshold`, the reply is empty, exceeds `DM_REPLY_MAX_BYTES`
+  in UTF-8 (never truncated), or **contains a link that does not appear in the business's own profile/knowledge**
+  (so a customer who talks the model into a phishing link gets nothing sent under the business's name).
+- **Sending:** the reply is an outbound `origin=ai`, `status=pending` message plus a `send_instagram_message` job
+  (same transaction, push after commit), i.e. the Phase 9 delivery path unchanged. Usage is recorded with
+  `purpose="dm_reply"`, including when the answer is discarded or escalated.
+- **Provider outage:** `AIGatewayError` -> retry honoring `retry_after`; nothing is sent or escalated meanwhile.
+
+### Known gaps (Phase 13)
+
+- **No API to configure it.** There is no endpoint to edit `business_profiles` or `ai_settings`, so an owner cannot
+  yet turn DM automation on, set the confidence threshold or write the business profile. (Tests and smoke runs seed
+  the rows.) This is the next piece of work.
+- **`off_hours_policy` / `working_hours` are not honored** (their format is not defined anywhere yet); the assistant
+  behaves as `respond`. Per-organization `provider` / `model` overrides in `ai_settings` are also not used yet.
+- **A reply that fails to send is not escalated.** If `send_instagram_message` ends `failed` (expired token, Meta
+  error) the customer is unanswered and no handoff is raised.
+- **Delivery to Meta is unverified.** The smoke test reached the real send job, which made the Graph request; the
+  development sandbox's egress blocks `graph.instagram.com` (403), so a successful send was never observed. Needs a
+  run with a real connected account.
+- Reply quality against the real model is unverified (the model was a local stub); the live-provider test for
+  moderation is still pending too.
+
+### Verification status
+
+302 tests + 8 live skipped on real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`; 29
+mutations of the gating, fail-closed, history, retrieval, prompt-escaping, link-guard and chaining logic, all caught
+(one survived at first: the history filter was shadowed by a time filter in the existing test, so a test with
+*earlier* spam was added; the row lock itself is not mutation-tested, as a lock-ordering race cannot be reproduced
+deterministically, but the re-check it protects is, via a takeover during the model call). End to end against real
+`uvicorn` + `arq` workers (events, ai, instagram) with signed webhooks: grounded reply queued and picked up by the
+send worker, threat -> handoff with no reply call, injected phishing link -> handoff, unknown question -> handoff,
+spam -> no reply call, Meta redelivery -> no duplicate (5 classifications, 3 reply calls, 0 tracebacks).

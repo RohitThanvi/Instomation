@@ -14,6 +14,7 @@ from app.db.session import create_engine, create_session_factory
 from app.services.ai.factory import build_ai_gateway
 from app.services.instagram.client import GraphInstagramApi
 from app.services.instagram.crypto import TokenCipher
+from app.workers.automation import generate_dm_reply
 from app.workers.maintenance import (
     purge_finished_records,
     refresh_instagram_tokens,
@@ -29,7 +30,7 @@ _settings = get_settings()
 # Task handlers per queue. Later phases register their `tracked` handlers here.
 HANDLERS: dict[QueueName, list[Any]] = {
     QueueName.EVENTS: [tracked(process_webhook_event)],
-    QueueName.AI: [tracked(moderate_message)],
+    QueueName.AI: [tracked(moderate_message), tracked(generate_dm_reply)],
     QueueName.INSTAGRAM: [tracked(send_instagram_message)],
 }
 _CRON_JOBS = {

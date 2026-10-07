@@ -1,11 +1,11 @@
 import json
-import re
 
 import structlog
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from app.services.ai.gateway import AIGateway
 from app.services.ai.provider import AICompletion, AIMessage
+from app.services.ai.structured import parse_model
 from app.services.moderation.types import ModerationCategory, Verdict, VerdictSource
 
 logger = structlog.get_logger(__name__)
@@ -22,7 +22,6 @@ _SYSTEM_PROMPT = (
     "If several apply choose the most severe in this order: threat, sexual, offensive, spam, "
     'clean. Respond with only JSON: {"category": "<category>", "confidence": <0 to 1>}.'
 )
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 
 
 class _ModelVerdict(BaseModel):
@@ -33,9 +32,8 @@ class _ModelVerdict(BaseModel):
 def parse_verdict(raw: str) -> Verdict:
     """Strictly validate model output. Anything that is not exactly the expected shape becomes a
     fail-safe verdict (escalated to a human), never a silent 'clean'."""
-    try:
-        parsed = _ModelVerdict.model_validate_json(_FENCE.sub("", raw.strip()))
-    except ValidationError:
+    parsed = parse_model(raw, _ModelVerdict)
+    if parsed is None:
         return Verdict(None, 0.0, VerdictSource.FAIL_SAFE)
     return Verdict(parsed.category, parsed.confidence, VerdictSource.MODEL)
 

@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
+from arq import create_pool
+from arq.connections import ArqRedis, RedisSettings
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -14,6 +16,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.config.settings import get_settings
+from app.services.instagram.crypto import TokenCipher
 from tests.integration.helpers import run_alembic
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -72,3 +76,18 @@ async def redis() -> AsyncIterator[Redis]:
     yield client
     await client.flushdb()
     await client.aclose()
+
+
+@pytest_asyncio.fixture
+async def cipher() -> TokenCipher:
+    return TokenCipher.from_settings(get_settings())
+
+
+@pytest_asyncio.fixture
+async def pool() -> AsyncIterator[ArqRedis]:
+    """A real arq pool (what workers get as ctx["redis"]) on an emptied test Redis."""
+    pool = await create_pool(RedisSettings.from_dsn(REDIS_URL))
+    await pool.flushdb()
+    yield pool
+    await pool.flushdb()
+    await pool.aclose()

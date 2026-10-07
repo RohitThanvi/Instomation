@@ -52,7 +52,14 @@ async def _defer_moderation(
     if not (settings.comment_automation_enabled if comment else settings.dm_automation_enabled):
         return
     await ctx.defer_job(
-        QueueName.AI, "moderate_message", {"message_id": str(message.id)}, organization_id
+        QueueName.AI,
+        "moderate_message",
+        {
+            "message_id": str(message.id),
+            "organization_id": str(organization_id),
+            "channel": "comment" if comment else "dm",
+        },
+        organization_id,
     )
 
 
