@@ -42,10 +42,13 @@ async def _mark(
         await session.commit()
 
 
-def tracked(handler: Handler) -> Callable[[Context, str], Awaitable[None]]:
+def tracked(
+    handler: Handler, *, on_exhausted: Handler | None = None
+) -> Callable[[Context, str], Awaitable[None]]:
     """Wrap a handler so its Job row reflects reality and failures follow the retry policy.
 
-    Handlers receive `(ctx, payload)`; raise `RetryableJobError` for transient failures.
+    Handlers receive `(ctx, payload)`; raise `RetryableJobError` for transient failures. When
+    retries run out, `on_exhausted(ctx, payload)` runs once so the work is not silently dropped.
     Idempotent by construction: a job already DONE is skipped.
     """
 
@@ -73,6 +76,11 @@ def tracked(handler: Handler) -> Callable[[Context, str], Awaitable[None]]:
                 logger.error(
                     "job_failed", job_id=job_id, attempts=attempt, reason="retries_exhausted"
                 )
+                if on_exhausted is not None:
+                    try:
+                        await on_exhausted(ctx, payload)
+                    except Exception:
+                        logger.exception("on_exhausted_failed", job_id=job_id)
                 return
             await _mark(factory, job_uuid, ProcessingStatus.PENDING, attempt, _describe(exc))
             raise Retry(defer=policy.delay(attempt, exc.retry_after)) from exc

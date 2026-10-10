@@ -430,13 +430,8 @@ failed push. `app/services/automation/dm_reply.py` then either queues one reply 
 
 ### Known gaps (Phase 13)
 
-- **No API to configure it.** There is no endpoint to edit `business_profiles` or `ai_settings`, so an owner cannot
-  yet turn DM automation on, set the confidence threshold or write the business profile. (Tests and smoke runs seed
-  the rows.) This is the next piece of work.
 - **`off_hours_policy` / `working_hours` are not honored** (their format is not defined anywhere yet); the assistant
   behaves as `respond`. Per-organization `provider` / `model` overrides in `ai_settings` are also not used yet.
-- **A reply that fails to send is not escalated.** If `send_instagram_message` ends `failed` (expired token, Meta
-  error) the customer is unanswered and no handoff is raised.
 - **Delivery to Meta is unverified.** The smoke test reached the real send job, which made the Graph request; the
   development sandbox's egress blocks `graph.instagram.com` (403), so a successful send was never observed. Needs a
   run with a real connected account.
@@ -445,7 +440,7 @@ failed push. `app/services/automation/dm_reply.py` then either queues one reply 
 
 ### Verification status
 
-302 tests + 8 live skipped on real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`; 29
+302 tests + 8 live skipped (before the 13b additions below) on real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`; 29
 mutations of the gating, fail-closed, history, retrieval, prompt-escaping, link-guard and chaining logic, all caught
 (one survived at first: the history filter was shadowed by a time filter in the existing test, so a test with
 *earlier* spam was added; the row lock itself is not mutation-tested, as a lock-ordering race cannot be reproduced
@@ -453,3 +448,33 @@ deterministically, but the re-check it protects is, via a takeover during the mo
 `uvicorn` + `arq` workers (events, ai, instagram) with signed webhooks: grounded reply queued and picked up by the
 send worker, threat -> handoff with no reply call, injected phishing link -> handoff, unknown question -> handoff,
 spam -> no reply call, Meta redelivery -> no duplicate (5 classifications, 3 reply calls, 0 tracebacks).
+
+## Settings API and giving up gracefully (Phase 13b)
+
+**Settings API** (`app/api/v1/business.py`, `services/business.py`, owner/admin only via `SETTINGS_MANAGE`):
+`GET|PUT /business/profile` and `GET|PATCH /settings/ai`. Only fields the pipeline actually honors are exposed
+(`working_hours`, `off_hours_policy`, `timezone`, per-org `provider`/`model` and `comment_like_enabled` are not, so the
+UI cannot offer a control that does nothing; unknown fields are 422). `PUT` replaces the whole profile (a field left
+out is cleared). `PATCH` is partial (`false` and `0` are real values; an empty body is 422). `GET` never writes a
+row: an organization that never saved sees the effective defaults. The first save is insert-or-skip on the unique
+`organization_id`, so simultaneous first saves cannot fail or duplicate. Size limits exist because these fields are
+rendered into the model's prompt. `website` must be http(s) because it also feeds the reply link allowlist. Changes are
+audited as field names (profile) or flag/number values (AI settings); text is never written to the audit log;
+no-op saves are not logged.
+
+**Giving up** (`services/automation/escalation.py`, `tracked(..., on_exhausted=...)`): when automation can no longer
+serve a customer, a human is asked instead of nothing happening.
+- A send that fails permanently (inactive account, expired or undecryptable token, non-retryable Meta error) or
+  exhausts its retries marks the message `failed`; if the AI wrote it, a `manual` handoff is opened (idempotent: nothing
+  happens if a human already owns the conversation; human-written messages do not raise one).
+- Moderation or reply jobs that exhaust their retries (provider down) open a `low_confidence` handoff.
+- Found in a real-process run: a send that exhausted retries previously left the message `pending` forever and the
+  customer unanswered. The handoff reason is `manual` because adding a dedicated `delivery_failed` value needs a
+  migration of the enum's CHECK constraint; do that if the inbox should distinguish it.
+
+Verified: 14 mutations of the settings logic and 12 of the escalation logic, all caught (four initially escaped
+because the tests did not cover them: profile `GET` writing a row, unknown fields alongside valid ones, an unapplied
+audit mutant and the undecryptable-token path; tests were added). Real `uvicorn` + workers with signed JWTs:
+the owner configured profile, knowledge entry and DM automation purely through the API, a DM sent before that was
+ignored (no model call), one sent after was moderated and answered from the configured knowledge, a manager got 403,
+and with Meta unreachable the exhausted send ended `failed` with the conversation `human_required`.

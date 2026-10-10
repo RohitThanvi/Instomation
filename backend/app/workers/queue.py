@@ -124,6 +124,7 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
 
     from app.config.settings import Settings
     from app.models.enums import DeliveryStatus
+    from app.services.automation.escalation import fail_delivery
     from app.services.instagram.capabilities import Capabilities, Feature
     from app.services.instagram.client import InstagramApi, InstagramApiError
     from app.services.instagram.crypto import TokenCipher, TokenDecryptionError
@@ -149,7 +150,7 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
 
         account = await session.get(InstagramAccount, message.instagram_account_id)
         if account is None or account.status != InstagramAccountStatus.ACTIVE:
-            message.status = DeliveryStatus.FAILED
+            await fail_delivery(session, message)
             await session.commit()
             return
 
@@ -159,22 +160,39 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
                 token, account.external_account_id, payload["recipient_external_id"], message.body
             )
         except TokenDecryptionError:
-            message.status = DeliveryStatus.FAILED
+            await fail_delivery(session, message)
             await session.commit()
             return
         except InstagramApiError as exc:
             if exc.is_token_error:
                 account.status = InstagramAccountStatus.TOKEN_EXPIRED
-                message.status = DeliveryStatus.FAILED
+                await fail_delivery(session, message)
                 await session.commit()
                 return
             if exc.is_retryable:
                 await session.commit()
                 raise RetryableJobError(str(exc), retry_after=exc.retry_after) from exc
-            message.status = DeliveryStatus.FAILED
+            await fail_delivery(session, message)
             await session.commit()
             return
 
         message.status = DeliveryStatus.SENT
         message.external_message_id = external_id
         await session.commit()
+
+
+async def give_up_sending(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """`on_exhausted` hook of send_instagram_message: retries ran out (Meta or the network stayed
+    unavailable), so the message will never be delivered. Record that, and if the AI wrote it,
+    ask a human to answer the customer."""
+    import uuid
+
+    from app.models.enums import DeliveryStatus
+    from app.services.automation.escalation import fail_delivery
+
+    factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    async with factory() as session:
+        message = await session.get(Message, uuid.UUID(payload["message_id"]))
+        if message is not None and message.status is DeliveryStatus.PENDING:
+            await fail_delivery(session, message)
+            await session.commit()

@@ -5,11 +5,24 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import Settings
+from app.models.enums import HandoffReason
 from app.services.ai.gateway import AIGateway, AIGatewayError
 from app.services.automation.dm_reply import generate_dm_reply as generate
+from app.services.automation.escalation import escalate_conversation_of
 from app.workers.errors import RetryableJobError
 from app.workers.queue import QueueUnavailableError, push_to_redis
 from app.workers.queues import QueueName
+
+
+async def escalate_unanswered(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """`on_exhausted` hook for AI-queue jobs: the provider stayed unavailable through every retry,
+    so the customer would otherwise wait forever. A human is asked to take over."""
+    factory: async_sessionmaker[AsyncSession] = ctx["session_factory"]
+    async with factory() as session:
+        await escalate_conversation_of(
+            session, uuid.UUID(payload["message_id"]), HandoffReason.LOW_CONFIDENCE
+        )
+        await session.commit()
 
 
 async def generate_dm_reply(ctx: dict[str, Any], payload: dict[str, Any]) -> None:

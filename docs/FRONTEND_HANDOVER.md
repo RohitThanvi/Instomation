@@ -58,12 +58,22 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
       organization is at its entry cap: show the message, do not retry.
     - `GET|PATCH|DELETE /api/v1/knowledge/entries/{id}`. PATCH is partial (omit a field to keep it; null is not
       accepted; send `attributes: {}` to clear them); an empty PATCH is 422. DELETE returns 204.
+    - `GET|PUT /api/v1/business/profile` (owner/admin). PUT replaces the whole profile, so submit the full form: a
+      field left out is cleared. `{ brand_name<=200, description<=2000, industry<=120, location<=200, website
+      (http/https URL), contact_info{<=10 items, value<=200}, policies{<=10 items, value<=500}, communication_style:
+      strict_business|professional|moderately_casual|friendly, custom_instructions<=2000 }`. GET returns the same
+      shape (empty values until saved). Anything else is 422.
+    - `GET|PATCH /api/v1/settings/ai` (owner/admin) -> `{ dm_automation_enabled, comment_automation_enabled,
+      confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
+      1-100 }`. PATCH takes any subset (at least one). `dm_automation_enabled` is the master switch for AI replies to
+      DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` has no effect until
+      comment automation ships.
     - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
       first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
       Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.
 - Roles: `owner`, `admin`, `manager`, `staff` (lowercase on the wire, as are all enum values such as instagram
   account `status` and `account_type`). Hide or disable UI by role, but the server is authoritative (403).
-- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,business,analytics,settings,usage}`.
+- Planned, not built yet: `/api/v1/{conversations,messages,comments,automations,analytics,usage}`.
   Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
 - Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.
