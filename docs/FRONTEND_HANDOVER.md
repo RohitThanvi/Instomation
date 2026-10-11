@@ -79,6 +79,22 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
       assigned_user_id, created_at, resolved_at }`. `GET /api/v1/handoffs/counts` -> `{ open, assigned }` for a badge.
       Handoffs move by themselves: `POST /conversations/{id}/takeover` -> `assigned` (to the caller),
       `/hand-back` and `/resolve` -> `resolved`. There is no endpoint to edit a handoff directly.
+    - Analytics (owner/admin/manager; staff get 403). Query params `from` and `to` are UTC dates, `to` inclusive;
+      default is the 30 days ending today; at most 366 days; `from` after `to` or a longer range is 422
+      `INVALID_RANGE`. Days are UTC because organizations have no timezone setting yet, so a chart's "today" can differ
+      from the owner's local day.
+      `GET /api/v1/analytics/overview` -> `{ range{start,end}, conversations{new, new_leads, by_state{ai_active,
+      human_required, human_active, resolved}} (by_state is a snapshot of right now, not of the range),
+      messages{inbound, outbound_ai, outbound_human, outbound_failed} (internal notes excluded),
+      automation{ai_replies_sent, handoffs_opened, handoffs_resolved, handoffs_by_reason{...}} (every reason present,
+      zero when none), moderation{allowed, blocked, escalated, blocked_by_category{spam|sexual|offensive: n}},
+      daily[{date, inbound, outbound}] }` (one entry per day in the range, zero-filled, ready to chart).
+    - Usage and cost (owner/admin only; managers and staff get 403). `GET /api/v1/usage?from=&to=` ->
+      `{ range, totals{requests, input_tokens, output_tokens, estimated_cost}, failed_requests, unpriced_requests,
+      average_latency_ms|null, by_purpose[{purpose, ..., estimated_cost}] (costliest first), by_model[{provider, model,
+      ...}], daily[{date, requests, estimated_cost}] }`. `estimated_cost` is a decimal **string** in USD (do not
+      parse it as a float). It is an estimate from a built-in price table. If `unpriced_requests` > 0 some requests used a
+      model with no price on file, so the cost understates real spend: show a notice instead of a confident total.
     - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
       first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
       Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.

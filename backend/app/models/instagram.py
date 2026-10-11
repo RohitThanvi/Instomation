@@ -114,6 +114,7 @@ class Message(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
     __table_args__ = (
         UniqueConstraint("instagram_account_id", "external_message_id"),
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+        Index("ix_messages_org_created", "organization_id", "created_at"),
     )
 
     instagram_account_id: Mapped[uuid.UUID] = _fk("instagram_accounts.id")

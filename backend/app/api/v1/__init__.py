@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    analytics,
     auth,
     business,
     conversations,
@@ -20,3 +21,4 @@ api_router.include_router(conversations.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(business.router)
 api_router.include_router(handoffs.router)
+api_router.include_router(analytics.router)

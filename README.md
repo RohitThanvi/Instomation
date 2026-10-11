@@ -27,7 +27,8 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 13 | DM automation | Done (moderated DMs get a grounded AI reply or a human handoff; configurable via `/business/profile` and `/settings/ai`; failed sends and exhausted AI jobs escalate to a human; fail-closed gates; queued through the existing send job; delivery to Meta not yet verified, see ARCHITECTURE.md) |
 | 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; private replies not included; delivery to Meta not yet verified) |
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
-| 16-18 | Dashboard, analytics, usage/cost | Planned |
+| 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
+| 18 | Dashboard (frontend screens) | Planned (the API it needs exists; see docs/FRONTEND_HANDOVER.md) |
 | 19-20 | Tests, deployment | Planned |
 
 Update this table in the same commit that completes a phase.

@@ -560,3 +560,37 @@ soft-deleted conversations, and the lock. 14 mutations of the lifecycle, scoping
 (`counts` reads only the `open` and `assigned` keys of its grouped result, so dropping its `WHERE` clause cannot change
 the response; the clause stays as an efficiency measure). Three mutants initially escaped for want of a test (re-assigning
 a resolved handoff, a soft-deleted conversation's handoff, and the lock) and tests were added.
+
+## Analytics and usage API (Phases 16-17)
+
+Read-only aggregates for the dashboard (`app/api/v1/analytics.py`, `services/analytics.py`). The dashboard screens
+themselves (Phase 18) are frontend work and do not exist yet.
+
+- `GET /analytics/overview` (`ANALYTICS_VIEW`: owner, admin, manager) and `GET /usage` (`SETTINGS_MANAGE`: owner, admin;
+  costs are not for every member). Both take `from`/`to` (inclusive UTC dates; default last 30 days; at most 366;
+  otherwise 422 `INVALID_RANGE`).
+- **Day boundaries:** a range is `[from 00:00 UTC, to+1 00:00 UTC)`, so the end date is included to its last
+  second; per-day buckets use `timezone('UTC', created_at)` so they do not depend on the database session's time zone.
+  Series are zero-filled. Organizations have no timezone setting, so "a day" is a UTC day.
+- **What is counted:** messages exclude internal notes; conversation `by_state` is a current snapshot (not limited to
+  the range) and skips soft-deleted conversations; handoffs are bucketed by creation (opened) and by `resolved_at`
+  (resolved) independently; moderation counts are customer messages by their stored verdict.
+- **Cost honesty:** `estimated_cost` comes from `services/ai/pricing.py`; an unknown (provider, model) prices at zero by
+  design so usage is never lost. The report therefore carries `unpriced_requests` (requests that used tokens but have no
+  price) so a total is never silently understated.
+- **Index:** migration `0004` adds `messages(organization_id, created_at)`, since these queries aggregate one
+  organization's messages over a range.
+- **Not included:** comparison against plan limits (no plans are seeded and billing is not built), CSV export, caching, and
+  per-user or per-conversation breakdowns.
+
+### Verification status
+
+20 analytics tests on real PostgreSQL with exact expected numbers from seeded data at fixed timestamps: both range
+boundaries (first instant in, last second in, the next instant out), the UTC-day bucket, zero-filled series, snapshot
+versus range semantics, soft-deleted conversations, handoffs opened versus resolved, internal-note exclusion, role
+gates, tenant isolation, range validation (including exactly 366 days) and decimal sums. 22 mutations, all caught
+(one target initially matched twice and was re-run with context). Not mutation-tested: replacing `timezone('UTC', ...)`
+with a plain cast behaves identically while the database session is already in UTC, as in the test database, so no test
+can tell them apart; the choice is defensive. Real `uvicorn` + workers: after the comment scenario the live overview
+matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason, moderation 2 allowed / 1 blocked /
+1 escalated, 5 usage rows split 3 moderation and 2 comment replies).
