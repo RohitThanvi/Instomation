@@ -71,6 +71,14 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
       conversation thread as outbound `origin: ai` messages; messages carry no channel field yet, so the UI cannot
       tell a public comment reply from a DM (a comment's inbound message has an `external_message_id` starting with
       `comment:`).
+    - Handoff queue (any member; staff only see conversations assigned to them, like the conversation list):
+      `GET /api/v1/handoffs?status=&cursor=&limit=` lists conversations that need a person, longest-waiting first.
+      Without `status` it returns unresolved ones (`open`, `assigned`); `status=resolved` is the history. Item:
+      `{ id, conversation_id, customer{id,external_user_id,username,display_name}, conversation_state,
+      conversation_priority, reason: low_confidence|missing_information|threat|complaint|manual|..., status,
+      assigned_user_id, created_at, resolved_at }`. `GET /api/v1/handoffs/counts` -> `{ open, assigned }` for a badge.
+      Handoffs move by themselves: `POST /conversations/{id}/takeover` -> `assigned` (to the caller),
+      `/hand-back` and `/resolve` -> `resolved`. There is no endpoint to edit a handoff directly.
     - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
       first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
       Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.

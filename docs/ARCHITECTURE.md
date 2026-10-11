@@ -529,3 +529,34 @@ check; tests now create a *duplicate job row* (for DMs as well) and the mutants 
 answered from the knowledge base, a threat escalated, a link flood was blocked by rules with no model call, a phishing-link
 attempt went to a human, a redelivered comment created nothing, and with Meta unreachable the send exhausted its retries
 and ended `failed` with a handoff.
+
+## Human takeover (Phase 15)
+
+Takeover, hand-back and resolve existed since Phase 9, but the `human_handoffs` rows that automation opens (threats,
+low confidence, failed sends, exhausted AI jobs) were never advanced: they stayed `open` forever, and there was no queue
+of conversations needing a person. Phase 15 closes that loop.
+
+- **Lifecycle** (`services/conversations/conversations.py::_advance_handoffs`): `take_over` moves the conversation's
+  `open` handoffs to `assigned` (to the person who took over); `hand_back_to_ai` and `resolve` move `open` and `assigned`
+  ones to `resolved` with `resolved_at`. Only that conversation's rows change; a resolved handoff is never
+  re-assigned; taking over a conversation nobody flagged is fine (no handoff row to move). A conversation that needs a
+  person again after hand-back gets a fresh `open` row; history is kept.
+- **Concurrency:** `request_human_handoff` now locks and re-reads the conversation row before deciding, because two
+  automation steps can ask at once (a threat verdict and a failed reply). Without it each saw "AI active" and opened
+  its own handoff. Verified with a deterministic test (hold the row, start three requests, release: exactly one
+  handoff and one audit entry); the mutant without the lock dies 3 of 3 runs. An earlier 10-way `gather` test passed
+  even without the lock, which is why it was replaced as the proof.
+- **Queue** (`app/api/v1/handoffs.py`): `GET /handoffs` (keyset, oldest first, unresolved by default, `status` filter)
+  and `GET /handoffs/counts`. Scoped by tenant, by soft-deleted conversations, and by role: staff see only conversations
+  assigned to them (same rule as the conversation list).
+- **Not included:** automatic release of a takeover left idle (a product decision: how long, and what the customer
+  experiences meanwhile), notifications (email/push), assignment to someone other than yourself, and a dedicated
+  `delivery_failed` handoff reason (needs an enum CHECK migration).
+
+### Verification status
+
+Handoff tests: lifecycle through the real API, queue ordering/filter/pagination/counts, staff and tenant scoping,
+soft-deleted conversations, and the lock. 14 mutations of the lifecycle, scoping and lock: 13 caught, 1 equivalent
+(`counts` reads only the `open` and `assigned` keys of its grouped result, so dropping its `WHERE` clause cannot change
+the response; the clause stays as an efficiency measure). Three mutants initially escaped for want of a test (re-assigning
+a resolved handoff, a soft-deleted conversation's handoff, and the lock) and tests were added.

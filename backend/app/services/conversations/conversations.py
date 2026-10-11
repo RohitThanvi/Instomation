@@ -1,11 +1,13 @@
 import uuid
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
 from app.core.rbac import Permission, has_permission
+from app.models.base import utcnow
 from app.models.enums import ConversationState, HandoffReason, HandoffStatus, MemberRole, Priority
 from app.models.instagram import Conversation
 from app.models.ops import HumanHandoff
@@ -77,6 +79,9 @@ async def request_human_handoff(
 ) -> None:
     """Idempotent: does nothing if a human is already engaged, so repeated triggers (e.g. two
     consecutive messages both flagged as complaints) don't create duplicate handoffs."""
+    # Lock and re-read: two automation steps can ask at once (a threat verdict and a failed reply),
+    # and without this both would see "AI active" and each open a handoff.
+    await session.refresh(conversation, with_for_update=True)
     if is_ai_silenced(conversation):
         return
     conversation.state = ConversationState.HUMAN_REQUIRED
@@ -104,11 +109,43 @@ async def request_human_handoff(
     )
 
 
+async def _advance_handoffs(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    from_statuses: tuple[HandoffStatus, ...],
+    to_status: HandoffStatus,
+    assignee: uuid.UUID | None = None,
+) -> None:
+    """Keep the conversation's handoff rows in step with what a person did to the conversation,
+    so the handoff queue never lists work that has already been picked up or finished."""
+    values: dict[str, Any] = {"status": to_status}
+    if to_status is HandoffStatus.ASSIGNED:
+        values["assigned_user_id"] = assignee
+    if to_status is HandoffStatus.RESOLVED:
+        values["resolved_at"] = utcnow()
+    await session.execute(
+        update(HumanHandoff)
+        .where(
+            HumanHandoff.conversation_id == conversation_id,
+            HumanHandoff.status.in_(from_statuses),
+        )
+        .values(**values)
+    )
+
+
 async def take_over(
     session: AsyncSession, tenant: TenantContext, conversation: Conversation
 ) -> Conversation:
     conversation.state = ConversationState.HUMAN_ACTIVE
     conversation.assigned_user_id = tenant.user_id
+    await _advance_handoffs(
+        session,
+        conversation.id,
+        from_statuses=(HandoffStatus.OPEN,),
+        to_status=HandoffStatus.ASSIGNED,
+        assignee=tenant.user_id,
+    )
     record_audit(
         session,
         "conversation.human_takeover",
@@ -123,6 +160,12 @@ async def hand_back_to_ai(
     session: AsyncSession, tenant: TenantContext, conversation: Conversation
 ) -> Conversation:
     conversation.state = ConversationState.AI_ACTIVE
+    await _advance_handoffs(
+        session,
+        conversation.id,
+        from_statuses=(HandoffStatus.OPEN, HandoffStatus.ASSIGNED),
+        to_status=HandoffStatus.RESOLVED,
+    )
     record_audit(
         session,
         "conversation.handed_back_to_ai",
@@ -137,6 +180,12 @@ async def resolve(
     session: AsyncSession, tenant: TenantContext, conversation: Conversation
 ) -> Conversation:
     conversation.state = ConversationState.RESOLVED
+    await _advance_handoffs(
+        session,
+        conversation.id,
+        from_statuses=(HandoffStatus.OPEN, HandoffStatus.ASSIGNED),
+        to_status=HandoffStatus.RESOLVED,
+    )
     record_audit(
         session,
         "conversation.resolved",

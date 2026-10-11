@@ -4,6 +4,7 @@ from app.api.v1 import (
     auth,
     business,
     conversations,
+    handoffs,
     instagram,
     knowledge,
     organizations,
@@ -18,3 +19,4 @@ api_router.include_router(webhooks.router)
 api_router.include_router(conversations.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(business.router)
+api_router.include_router(handoffs.router)
