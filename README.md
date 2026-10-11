@@ -25,7 +25,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 11 | Moderation | Done (rules + LLM safety classifier, fail-closed policy, runs on the `ai` queue before any reply; live-provider check pending, see below) |
 | 12 | Knowledge base | Done (entries CRUD + full-text retrieval API, per-org cap, tenant-scoped, audited; website/file ingestion not included) |
 | 13 | DM automation | Done (moderated DMs get a grounded AI reply or a human handoff; configurable via `/business/profile` and `/settings/ai`; failed sends and exhausted AI jobs escalate to a human; fail-closed gates; queued through the existing send job; delivery to Meta not yet verified, see ARCHITECTURE.md) |
-| 14 | Comment automation | Planned (moderation already runs on comments; no reply path yet) |
+| 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; private replies not included; delivery to Meta not yet verified) |
 | 15 | Human takeover | Planned |
 | 16-18 | Dashboard, analytics, usage/cost | Planned |
 | 19-20 | Tests, deployment | Planned |

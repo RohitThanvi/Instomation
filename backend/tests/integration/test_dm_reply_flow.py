@@ -444,12 +444,24 @@ async def test_a_human_reply_already_sent_means_the_ai_stays_quiet(case: Case) -
     assert gateway.calls == [] and len(await case.outbound()) == 1
 
 
-async def test_rerunning_the_job_never_answers_twice(case: Case) -> None:
+async def test_rerunning_or_duplicating_the_job_never_answers_twice(case: Case) -> None:
     await case.say("Do you deliver?")
     job = await case.reply_job_after_moderation()
     gateway = SequenceGateway(reply_json("Yes"), reply_json("Yes again"))
     await case.run(generate_dm_reply, gateway, job)
-    await case.run(generate_dm_reply, gateway, job)
+    await case.run(generate_dm_reply, gateway, job)  # same row: tracked() skips it
+    async with case.factory() as session:  # a duplicate enqueue: a second row for the same work
+        twin = Job(
+            organization_id=case.org_id,
+            queue=job.queue,
+            kind=job.kind,
+            status=ProcessingStatus.PENDING,
+            payload=dict(job.payload),
+        )
+        session.add(twin)
+        await session.commit()
+        await session.refresh(twin)
+    await case.run(generate_dm_reply, gateway, twin)
     assert len(gateway.calls) == 1 and len(await case.outbound()) == 1
 
 

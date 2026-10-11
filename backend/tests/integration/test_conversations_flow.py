@@ -46,6 +46,7 @@ class FakeInstagramApi:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, str]] = []
         self.fail_with: InstagramApiError | None = None
+        self.replies: list[tuple[str, str]] = []
 
     async def send_dm(self, token: str, account_id: str, recipient_id: str, text: str) -> str:
         if self.fail_with:
@@ -77,7 +78,10 @@ class FakeInstagramApi:
         raise NotImplementedError
 
     async def reply_to_comment(self, token: str, comment_id: str, text: str) -> str:
-        raise NotImplementedError
+        if self.fail_with:
+            raise self.fail_with
+        self.replies.append((comment_id, text))
+        return f"reply-{len(self.replies)}"
 
 
 @pytest_asyncio.fixture
@@ -404,7 +408,11 @@ async def test_manual_reply_requires_takeover_and_delivers_through_instagram_que
 
     async with session_factory() as session:
         job = (
-            await session.execute(select(Job).where(Job.kind == "send_instagram_message"))
+            await session.execute(
+                select(Job).where(
+                    Job.kind == "send_instagram_message", Job.organization_id == org_id
+                )
+            )
         ).scalar_one()
 
     from app.core.retry import RetryPolicy

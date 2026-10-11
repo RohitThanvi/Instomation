@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -115,17 +116,21 @@ async def process_webhook_event(ctx: dict[str, Any], payload: dict[str, Any]) ->
             break  # rows are committed and PENDING; requeue_stale_jobs delivers them later
 
 
-async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
-    """INSTAGRAM-queue handler: deliver one outbound Message via the Graph API.
+async def _deliver(
+    ctx: dict[str, Any],
+    payload: dict[str, Any],
+    feature: Any,
+    send: Callable[[Any, str, InstagramAccount, Message], Awaitable[str]],
+) -> None:
+    """Deliver one outbound Message through Meta. `feature` is the capability that must be on and
+    `send(api, token, account, message)` makes the actual Graph call and returns Meta's id.
 
     Local imports avoid a circular import (this module is imported by app.main).
     """
-    import uuid
-
     from app.config.settings import Settings
     from app.models.enums import DeliveryStatus
     from app.services.automation.escalation import fail_delivery
-    from app.services.instagram.capabilities import Capabilities, Feature
+    from app.services.instagram.capabilities import Capabilities
     from app.services.instagram.client import InstagramApi, InstagramApiError
     from app.services.instagram.crypto import TokenCipher, TokenDecryptionError
     from app.workers.errors import RetryableJobError
@@ -143,7 +148,7 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
         if message.status is not DeliveryStatus.PENDING:
             return  # already delivered or already given up on; never send twice
 
-        if not Capabilities(settings).is_enabled(Feature.DM_REPLY):
+        if not Capabilities(settings).is_enabled(feature):
             message.status = DeliveryStatus.SUPPRESSED
             await session.commit()
             return
@@ -156,9 +161,7 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
 
         try:
             token = cipher.decrypt(account.access_token_encrypted)
-            external_id = await api.send_dm(
-                token, account.external_account_id, payload["recipient_external_id"], message.body
-            )
+            external_id = await send(api, token, account, message)
         except TokenDecryptionError:
             await fail_delivery(session, message)
             await session.commit()
@@ -179,6 +182,30 @@ async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -
         message.status = DeliveryStatus.SENT
         message.external_message_id = external_id
         await session.commit()
+
+
+async def send_instagram_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """INSTAGRAM-queue handler: deliver one outbound DM via the Graph API."""
+    from app.services.instagram.capabilities import Feature
+
+    async def send(api: Any, token: str, account: InstagramAccount, message: Message) -> str:
+        return str(
+            await api.send_dm(
+                token, account.external_account_id, payload["recipient_external_id"], message.body
+            )
+        )
+
+    await _deliver(ctx, payload, Feature.DM_REPLY, send)
+
+
+async def send_comment_reply(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """INSTAGRAM-queue handler: post one public reply under a comment."""
+    from app.services.instagram.capabilities import Feature
+
+    async def send(api: Any, token: str, account: InstagramAccount, message: Message) -> str:
+        return str(await api.reply_to_comment(token, payload["comment_id"], message.body))
+
+    await _deliver(ctx, payload, Feature.COMMENT_REPLY, send)
 
 
 async def give_up_sending(ctx: dict[str, Any], payload: dict[str, Any]) -> None:

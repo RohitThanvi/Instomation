@@ -14,7 +14,8 @@ from app.workers.jobs import add_job
 from app.workers.queue import QueueUnavailableError, push_to_redis
 from app.workers.queues import QueueName
 
-REPLY_FUNCTION = "generate_dm_reply"
+# Only a message moderation cleared ("allow") is handed on, to the generator for its channel.
+REPLY_FUNCTIONS = {"dm": "generate_dm_reply", "comment": "generate_comment_reply"}
 
 
 async def moderate_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -31,22 +32,23 @@ async def moderate_message(ctx: dict[str, Any], payload: dict[str, Any]) -> None
         except AIGatewayError as exc:
             await session.rollback()
             raise RetryableJobError(str(exc), retry_after=exc.retry_after) from exc
-        reply_job_id: uuid.UUID | None = None
+        chained: tuple[uuid.UUID, str] | None = None  # (job id, function) to push after commit
+        reply_function = REPLY_FUNCTIONS.get(payload.get("channel", ""))
         if (
             decision is not None
             and decision.action is ModerationAction.ALLOW
-            and payload.get("channel") == "dm"
+            and reply_function is not None
         ):
             job = await add_job(
                 session,
                 QueueName.AI,
-                REPLY_FUNCTION,
+                reply_function,
                 {"message_id": str(message_id)},
                 uuid.UUID(payload["organization_id"]),
             )
-            reply_job_id = job.id
+            chained = (job.id, reply_function)
         await session.commit()
-    if reply_job_id is not None:
+    if chained is not None:
         # On failure the committed PENDING row is delivered later by requeue_stale_jobs.
         with contextlib.suppress(QueueUnavailableError):
-            await push_to_redis(ctx["redis"], reply_job_id, QueueName.AI, REPLY_FUNCTION)
+            await push_to_redis(ctx["redis"], chained[0], QueueName.AI, chained[1])

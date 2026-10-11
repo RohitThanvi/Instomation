@@ -478,3 +478,54 @@ audit mutant and the undecryptable-token path; tests were added). Real `uvicorn`
 the owner configured profile, knowledge entry and DM automation purely through the API, a DM sent before that was
 ignored (no model call), one sent after was moderated and answered from the configured knowledge, a manager got 403,
 and with Meta unreachable the exhausted send ended `failed` with the conversation `human_required`.
+
+## Comment auto-reply (Phase 14)
+
+Same shape as DM replies, for **public** replies to comments (`app/services/automation/comment_reply.py`). The comment
+event handler (Phase 8) already stored each comment as an inbound message (`external_message_id` =
+`comment:<instagram comment id>`, `COMMENT_ID_PREFIX`) and queued moderation; `moderate_message` now chains by channel
+(`REPLY_FUNCTIONS`): a cleared DM goes to `generate_dm_reply`, a cleared comment to `generate_comment_reply`. Nothing
+else is chained, so blocked, escalated and unmoderated comments are never answered.
+
+- **Switch:** `ai_settings.comment_automation_enabled`, independent of `dm_automation_enabled`.
+- **Skip reasons** (checked before the model call and again under the conversation lock): not a comment, not
+  moderated `allow`, automation off, conversation owned by a person, comment older than `COMMENT_REPLY_WINDOW_HOURS`
+  (72), already answered, and the hourly AI-reply cap. "Already answered" is read from the send job
+  (`payload.comment_message_id`), not from message order, because comments on different posts interleave in one
+  conversation. There is no "superseded" rule: each comment is independent.
+- **Prompt:** the shared rules plus a public-channel clause (never personal, order-specific or private details; if the
+  commenter needs those, `needs_human`); only the comment text is sent as the user turn (no history); knowledge
+  retrieved with the comment as the query. Same escaped-data, grounding and link-allowlist defenses as DMs.
+- **Fail closed:** same gates as DMs, with the length limit counted in **characters** (`COMMENT_REPLY_MAX_CHARS`, 300,
+  inclusive; a Hindi reply of 300 characters is fine) and escalated rather than truncated.
+- **Delivery:** outbound `origin=ai` message + `send_comment_reply` job (same transaction, push after commit) that
+  calls `reply_to_comment`; it shares `_deliver` with the DM send, so it has the same capability flag
+  (`FEATURE_COMMENT_REPLY`), token handling, retry behavior and give-up escalation.
+- **Channel separation:** the DM generator refuses comment messages (a requeued or forged job must not DM someone who
+  only commented publicly) and vice versa; both are tested.
+- Refactor in this phase: knowledge retrieval, answer gating (`escalation_reason`) and the prompt rules are shared
+  between the two channels instead of copied; the send handler became `_deliver`. A latent order-dependent query in an
+  existing test (an unfiltered `select(Job)`) was scoped to its organization.
+
+### Known gaps (Phase 14)
+
+- **No private reply** (a DM to the commenter via `send_private_reply`, allowed once per comment within 7 days). It
+  needs a product decision about when to open a DM with someone who did not message first; the Graph method and the
+  `PRIVATE_REPLY` flag exist.
+- **No channel marker on messages**, so the inbox cannot show that an AI reply was public. A `messages.channel`
+  column (needs a migration and a backfill from the `comment:` prefix) is the clean fix.
+- Instagram offers no endpoint to like or hide via this API, so neither is attempted (`comment_like_enabled` is not
+  exposed).
+- Delivery to Meta is unverified for the same reason as DMs (sandbox egress); reply quality against the real model is
+  unverified.
+
+### Verification status
+
+397 tests + 8 live skipped on real PostgreSQL + Redis, `ruff`, `mypy --strict`; 19 mutations of the comment gates, length
+semantics, channel separation, chaining, capability flag and send call, all caught. One initially survived because
+`tracked()` already skips a re-run of a finished job row, so the "re-run" test never reached the already-answered
+check; tests now create a *duplicate job row* (for DMs as well) and the mutants die. Real `uvicorn` + workers with signed
+`comments` webhooks and only comment automation enabled: a DM was ignored (no model call), a delivery question was
+answered from the knowledge base, a threat escalated, a link flood was blocked by rules with no model call, a phishing-link
+attempt went to a human, a redelivered comment created nothing, and with Meta unreachable the send exhausted its retries
+and ended `failed` with a handoff.

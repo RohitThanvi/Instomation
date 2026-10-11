@@ -24,13 +24,13 @@ from app.services.ai.structured import parse_model
 from app.services.ai.usage import record_usage
 from app.services.automation.prompt import PromptContext, build_prompt, disallowed_urls
 from app.services.conversations.conversations import is_ai_silenced, request_human_handoff
-from app.services.conversations.messages import record_message
+from app.services.conversations.messages import COMMENT_ID_PREFIX, record_message
 from app.services.knowledge.search import search_entries
 from app.workers.jobs import add_job
 from app.workers.queues import QueueName
 
 PURPOSE = "dm_reply"
-_APPROVED = "allow"
+APPROVED = "allow"
 
 
 class ReplyOutcome(StrEnum):
@@ -52,7 +52,7 @@ class ReplyResult:
     send_job: Job | None = None
 
 
-class _ModelReply(BaseModel, extra="forbid"):
+class ModelReply(BaseModel, extra="forbid"):
     reply: str
     confidence: float = Field(ge=0.0, le=1.0)
     needs_human: bool
@@ -67,7 +67,9 @@ async def _skip_reason(
 ) -> ReplyOutcome | None:
     """Every reason NOT to answer. Evaluated before generating and again, under the conversation
     lock, immediately before the reply is recorded (state can change while the model runs)."""
-    if not message.moderation or message.moderation.get("action") != _APPROVED:
+    if (message.external_message_id or "").startswith(COMMENT_ID_PREFIX):
+        return ReplyOutcome.NOT_APPLICABLE  # a comment is answered publicly, never by DM
+    if not message.moderation or message.moderation.get("action") != APPROVED:
         return ReplyOutcome.NOT_CLEARED
     if ai_settings is None or not ai_settings.dm_automation_enabled:
         return ReplyOutcome.AUTOMATION_OFF
@@ -93,7 +95,7 @@ async def _skip_reason(
         Message.direction == MessageDirection.INBOUND,
         Message.origin == MessageOrigin.CUSTOMER,
         Message.created_at > message.created_at,
-        or_(Message.moderation.is_(None), Message.moderation["action"].as_string() == _APPROVED),
+        or_(Message.moderation.is_(None), Message.moderation["action"].as_string() == APPROVED),
     )
     if await session.scalar(select(newer)):
         return ReplyOutcome.SUPERSEDED
@@ -140,7 +142,7 @@ async def _history(session: AsyncSession, message: Message, settings: Settings) 
                 # messages we refused to answer (spam, abuse, threats) are not conversation
                 or_(
                     Message.moderation.is_(None),
-                    Message.moderation["action"].as_string() == _APPROVED,
+                    Message.moderation["action"].as_string() == APPROVED,
                 ),
             )
             .order_by(Message.created_at.desc(), Message.id)
@@ -153,17 +155,14 @@ async def _history(session: AsyncSession, message: Message, settings: Settings) 
     ]
 
 
-async def _retrieve(
-    session: AsyncSession, settings: Settings, message: Message
+async def retrieve_knowledge(
+    session: AsyncSession, settings: Settings, organization_id: uuid.UUID, query: str
 ) -> list[KnowledgeEntry]:
+    """The organization's best-matching entries for `query` that fit the prompt budget."""
     if settings.dm_reply_knowledge_entries == 0:
         return []
     hits = await search_entries(
-        session,
-        settings,
-        message.organization_id,
-        await _recent_customer_text(session, message),
-        settings.dm_reply_knowledge_entries,
+        session, settings, organization_id, query, settings.dm_reply_knowledge_entries
     )
     chosen: list[KnowledgeEntry] = []
     used = 0
@@ -175,11 +174,13 @@ async def _retrieve(
     return chosen
 
 
-def _escalation(
-    parsed: _ModelReply | None,
+def escalation_reason(
+    parsed: ModelReply | None,
     prompt: PromptContext,
     ai_settings: AiSettings,
-    settings: Settings,
+    *,
+    max_bytes: int,
+    max_chars: int | None = None,
 ) -> HandoffReason | None:
     """Fail closed: any doubt about the model's answer means a human answers instead."""
     if parsed is None:
@@ -190,7 +191,8 @@ def _escalation(
     if (
         not reply
         or parsed.confidence < ai_settings.confidence_threshold
-        or len(reply.encode()) > settings.dm_reply_max_bytes
+        or len(reply.encode()) > max_bytes
+        or (max_chars is not None and len(reply) > max_chars)
         or disallowed_urls(reply, prompt.allowed_urls)
     ):
         return HandoffReason.LOW_CONFIDENCE
@@ -231,7 +233,9 @@ async def generate_dm_reply(
     ).scalar_one_or_none()
     prompt = build_prompt(
         profile,
-        await _retrieve(session, settings, message),
+        await retrieve_knowledge(
+            session, settings, org_id, await _recent_customer_text(session, message)
+        ),
         max_chars=settings.dm_reply_max_bytes // 4,  # conservative for 3-4 byte scripts
     )
     completion = await gateway.complete(
@@ -241,8 +245,10 @@ async def generate_dm_reply(
         organization_id=str(org_id),
     )
     record_usage(session, org_id, PURPOSE, completion, conversation_id=conversation.id)
-    parsed = parse_model(completion.text, _ModelReply)
-    escalation = _escalation(parsed, prompt, ai_settings, settings)
+    parsed = parse_model(completion.text, ModelReply)
+    escalation = escalation_reason(
+        parsed, prompt, ai_settings, max_bytes=settings.dm_reply_max_bytes
+    )
 
     # The model call took seconds: lock the conversation and re-check before acting on it.
     await session.refresh(conversation, with_for_update=True)

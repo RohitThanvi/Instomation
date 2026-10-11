@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     # Headroom on top of the organization's max_response_tokens for the JSON wrapper.
     dm_reply_json_overhead_tokens: int = Field(default=80, ge=0)
 
+    # ---- Comment auto-reply ----
+    # A public reply to a long-stale comment reads oddly, so older comments are left alone.
+    comment_reply_window_hours: int = Field(default=72, ge=1)
+    # Public replies are short on purpose; longer model output is escalated, never truncated.
+    comment_reply_max_chars: int = Field(default=300, ge=50)
+
     # ---- Moderation (safety classifier; runs before any AI response generation) ----
     # Instagram caps DMs at 1000 bytes and comments at 2200 characters, so longer input cannot come
     # from Meta. Rather than truncating (which lets an attacker pad a threat past the cut), such

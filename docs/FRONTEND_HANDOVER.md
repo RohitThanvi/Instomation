@@ -66,8 +66,11 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
     - `GET|PATCH /api/v1/settings/ai` (owner/admin) -> `{ dm_automation_enabled, comment_automation_enabled,
       confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
       1-100 }`. PATCH takes any subset (at least one). `dm_automation_enabled` is the master switch for AI replies to
-      DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` has no effect until
-      comment automation ships.
+      DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` is the independent master switch for
+      public AI replies to comments (it does not depend on the DM switch). Public replies appear in the same
+      conversation thread as outbound `origin: ai` messages; messages carry no channel field yet, so the UI cannot
+      tell a public comment reply from a DM (a comment's inbound message has an `external_message_id` starting with
+      `comment:`).
     - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
       first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
       Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.

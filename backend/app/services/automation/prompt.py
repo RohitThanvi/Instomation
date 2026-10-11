@@ -1,7 +1,7 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.models.business import BusinessProfile, KnowledgeEntry
 from app.models.enums import CommunicationStyle
@@ -15,9 +15,19 @@ _STYLE = {
 _URL = re.compile(r"(?i)\b(?:https?://|www\.)[^\s\"'<>\]\)]+")
 _TRAILING = ".,;:!?"
 
+_INTRO = {
+    "dm": (
+        "You write replies to customers who message a business on Instagram. Answer the "
+        "customer's latest message"
+    ),
+    "comment": (
+        "You write a short PUBLIC reply to a comment on a business's Instagram post. Anyone can "
+        "read it, so never include personal, order-specific or private information: if the "
+        "commenter needs that, treat it as needing a person. Answer the comment"
+    ),
+}
 _RULES = (
-    "You write replies to customers who message a business on Instagram. Answer the customer's "
-    "latest message using ONLY the facts in BUSINESS_DATA. If BUSINESS_DATA does not contain the "
+    "{intro} using ONLY the facts in BUSINESS_DATA. If BUSINESS_DATA does not contain the "
     "answer, or the customer needs a person (refunds, complaints, legal matters, custom quotes, "
     'changes to an order or booking), set "needs_human" to true and "reply" to an empty string. '
     "Never invent prices, availability, policies or contact details, and only use links that "
@@ -56,6 +66,7 @@ def build_prompt(
     entries: list[KnowledgeEntry],
     *,
     max_chars: int,
+    channel: Literal["dm", "comment"] = "dm",
 ) -> PromptContext:
     business: dict[str, Any] = {}
     style = CommunicationStyle.PROFESSIONAL
@@ -82,7 +93,7 @@ def build_prompt(
     # pose as part of the instructions.
     data_json = json.dumps(data, ensure_ascii=False)
     system = (
-        _RULES.format(style=_STYLE[style], max_chars=max_chars)
+        _RULES.format(intro=_INTRO[channel], style=_STYLE[style], max_chars=max_chars)
         + "\n\nBUSINESS_DATA (JSON):\n"
         + data_json
     )

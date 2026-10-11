@@ -15,7 +15,11 @@ from app.models.enums import DeliveryStatus, MessageDirection, MessageOrigin
 from app.models.instagram import Conversation, Message, WebhookEvent
 from app.services.conversations.conversations import get_or_create_conversation, is_ai_silenced
 from app.services.conversations.customers import get_or_create_customer
-from app.services.conversations.messages import record_message, resolve_account_external_id
+from app.services.conversations.messages import (
+    COMMENT_ID_PREFIX,
+    record_message,
+    resolve_account_external_id,
+)
 from app.services.events.dispatch import EventContext, register
 from app.workers.queues import QueueName
 
@@ -164,7 +168,7 @@ async def handle_comment(ctx: EventContext, event: WebhookEvent) -> None:
             origin=MessageOrigin.CUSTOMER,
             body=text,
             status=DeliveryStatus.RECEIVED,
-            external_message_id=f"comment:{comment_id}",
+            external_message_id=f"{COMMENT_ID_PREFIX}{comment_id}",
         )
         await _defer_moderation(ctx, organization_id, conversation, message, comment=True)
 
