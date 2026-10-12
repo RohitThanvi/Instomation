@@ -9,6 +9,9 @@ from app.models.base import utcnow
 from app.models.enums import DeliveryStatus, MessageDirection, MessageOrigin
 from app.models.instagram import Conversation, InstagramAccount, Message
 
+# A comment is stored as an inbound message whose external id is this prefix + Instagram's id.
+COMMENT_ID_PREFIX = "comment:"
+
 
 async def record_message(
     session: AsyncSession,

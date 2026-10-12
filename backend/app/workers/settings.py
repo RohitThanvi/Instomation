@@ -11,17 +11,22 @@ from app.config.settings import get_settings
 from app.core.logging import configure_logging
 from app.core.retry import RetryPolicy
 from app.db.session import create_engine, create_session_factory
-from app.services.ai.gateway import AIGateway
-from app.services.ai.providers.groq import GroqProvider
-from app.services.ai.providers.openai import OpenAIProvider
+from app.services.ai.factory import build_ai_gateway
 from app.services.instagram.client import GraphInstagramApi
 from app.services.instagram.crypto import TokenCipher
+from app.workers.automation import escalate_unanswered, generate_comment_reply, generate_dm_reply
 from app.workers.maintenance import (
     purge_finished_records,
     refresh_instagram_tokens,
     requeue_stale_jobs,
 )
-from app.workers.queue import process_webhook_event, send_instagram_message
+from app.workers.moderation import moderate_message
+from app.workers.queue import (
+    give_up_sending,
+    process_webhook_event,
+    send_comment_reply,
+    send_instagram_message,
+)
 from app.workers.queues import QueueName
 from app.workers.runtime import tracked
 
@@ -30,7 +35,15 @@ _settings = get_settings()
 # Task handlers per queue. Later phases register their `tracked` handlers here.
 HANDLERS: dict[QueueName, list[Any]] = {
     QueueName.EVENTS: [tracked(process_webhook_event)],
-    QueueName.INSTAGRAM: [tracked(send_instagram_message)],
+    QueueName.AI: [
+        tracked(moderate_message, on_exhausted=escalate_unanswered),
+        tracked(generate_dm_reply, on_exhausted=escalate_unanswered),
+        tracked(generate_comment_reply, on_exhausted=escalate_unanswered),
+    ],
+    QueueName.INSTAGRAM: [
+        tracked(send_instagram_message, on_exhausted=give_up_sending),
+        tracked(send_comment_reply, on_exhausted=give_up_sending),
+    ],
 }
 _CRON_JOBS = {
     QueueName.MAINTENANCE: [
@@ -53,20 +66,7 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
     ctx["token_cipher"] = TokenCipher.from_settings(_settings)
     redis_client = Redis.from_url(_settings.redis_url, decode_responses=True)
     ctx["redis_client"] = redis_client
-    ctx["ai_gateway"] = AIGateway(
-        {
-            "groq": GroqProvider(
-                http_client, _settings.groq_api_key.get_secret_value(), _settings.groq_model
-            ),
-            "openai": OpenAIProvider(
-                http_client, _settings.openai_api_key.get_secret_value(), _settings.openai_model
-            ),
-        },
-        _settings.ai_primary_provider,
-        _settings.ai_fallback_provider,
-        redis_client,
-        _settings,
-    )
+    ctx["ai_gateway"] = build_ai_gateway(http_client, redis_client, _settings)
     ctx["retry_policy"] = RetryPolicy(
         max_attempts=_settings.job_max_tries,
         base_seconds=_settings.job_retry_base_seconds,

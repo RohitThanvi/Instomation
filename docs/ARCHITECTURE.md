@@ -302,3 +302,295 @@ Caught by the gateway's integration tests themselves (mutation-tested, not just 
    test from pytest's collection entirely — a passing suite was quietly missing a test. Both are why
    this project greps for suspicious naming after any blind rename and re-counts the test total after
    every phase, not just reads "all tests pass".
+
+## Moderation (Phase 11)
+
+Every inbound message the AI might answer is safety-classified **before** any reply is generated.
+Categories: `clean`, `spam`, `sexual`, `offensive`, `threat`.
+
+- **Trigger** (`app/services/events/handlers.py::_defer_moderation`): after `handle_message` /
+  `handle_comment` records a *new* inbound message, a `moderate_message` job is added to the `ai`
+  queue. Skipped for: a redelivered message (nothing new recorded), a conversation a human owns, and
+  organizations whose `ai_settings` has that automation (`dm_automation_enabled` /
+  `comment_automation_enabled`) off or unset, so no model quota is spent where the AI will not reply.
+- **Transactional deferral** (`EventContext.defer_job`): the `jobs` row is written in the *same
+  transaction* as the message; `process_webhook_event` pushes it to Redis only **after** commit. A job
+  therefore can never run before its message exists, and a Redis outage leaves a PENDING row for the
+  existing `requeue_stale_jobs` sweeper.
+- **Pipeline** (`app/services/moderation/service.py`): deterministic rules first
+  (`rules.py`: more than `MODERATION_MAX_LINKS` links or `MODERATION_MAX_MENTIONS` mentions is spam
+  with no model call; input over `MODERATION_MAX_INPUT_CHARS` is *not truncated* - truncation would let
+  padding push a threat past the cut - and is escalated unclassified). Otherwise the
+  `ModerationClassifier` asks the AI gateway (temperature 0) for `{"category", "confidence"}`.
+- **Policy** (`policy.py`) fails closed: the **only** path to `allow` is a confident `clean`.
+  `threat` escalates at *any* confidence (a false alarm costs a glance; a miss is the failure being
+  prevented) and opens a `THREAT` handoff (conversation -> `human_required`, priority high).
+  `spam`/`sexual`/`offensive` above `MODERATION_MIN_CONFIDENCE` are `block` (no reply, no human needed;
+  message `intent` is set). Low confidence, unparseable or off-schema model output, and oversized input
+  are `escalate` with `LOW_CONFIDENCE`.
+- **Persisted contract:** `messages.moderation = {action, category, source, confidence}`, where `source`
+  is `rules`, `model` or `fail_safe`. **Phases 13-14 must generate a reply only for a message whose
+  `moderation.action == "allow"`;** a missing value means "not yet moderated", never "safe". The message
+  text itself is not copied into this record.
+- **Provider outage:** `AIGatewayError` becomes `RetryableJobError`, honoring the longest
+  `retry_after` any provider reported (gateway now carries it). The message stays unmoderated, and so
+  unanswerable, until a retry succeeds or the job is FAILED and visible to admins. Verified against
+  running processes: an unreachable model tripped the circuit breaker and jobs were deferred ~60s.
+- **Prompt-injection defense** (engineering rule 8): the message is passed only as a `json.dumps`
+  string literal (no raw newlines or quote break-out), the system prompt declares it untrusted data,
+  and output is validated against a closed schema, so injected text can at worst *choose* a category,
+  never emit free text. An injection that convinces the model to say `clean` is a residual risk of any
+  LLM classifier; the rules layer and the live test set below are the mitigations, not a guarantee.
+- **Usage:** each classification is recorded in `ai_usage` with `purpose="moderation"`.
+- **Also in this phase:** `GROQ_BASE_URL` / `OPENAI_BASE_URL` settings (self-hosted or proxy
+  endpoints, and what makes the running-process verification possible), one shared
+  `build_ai_gateway` for the API and workers, `AIGatewayError.retry_after`, and
+  `META_WEBHOOK_VERIFY_TOKEN` defaulted in `tests/conftest.py` (five webhook tests only passed when
+  that variable happened to be exported in the developer's shell).
+
+### Verification status
+
+Verified: 190 tests against real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`;
+14 targeted mutations of the safety logic (each caught by a test; one initially survived, exposing a
+missing "flag explicitly off" test, now added); and an end-to-end run of real `uvicorn` + `arq`
+(`events` and `ai`) processes with genuinely HMAC-signed webhooks (clean -> allow, threat -> escalate +
+handoff, spam -> block, link flood -> rules without a model call, redelivery -> no second job).
+**Not yet verified:** classification quality against the real Groq model. The development sandbox
+could not reach the provider, so the model endpoint was a local stub. Run
+`GROQ_API_KEY=... TEST_REDIS_URL=... pytest tests/test_moderation_live.py -v` to check it.
+
+## Knowledge base (Phase 12)
+
+Per-organization facts the assistant may answer from: `knowledge_entries` (`kind` faq / product / service /
+policy / website / custom, `title`, `content`, flat `attributes`). Managed through `/api/v1/knowledge/*`
+(`app/api/v1/knowledge.py`), which requires `SETTINGS_MANAGE` (owner, admin).
+
+- **Tenancy and lifecycle:** every query filters by the server-resolved `organization_id` and
+  `deleted_at IS NULL`; cross-tenant ids are 404, never 403, so existence is not disclosed. Delete is soft.
+  Create/update/delete write `audit_logs` rows containing only `entry_id` and `kind`, never content.
+- **Entry cap:** `KNOWLEDGE_MAX_ENTRIES` (default 500) active entries per organization, enforced in
+  `create_entry` under a transaction-scoped Postgres advisory lock keyed on the organization, because a plain
+  count-then-insert lets concurrent requests jointly exceed the cap (verified: with a shared instead of an
+  exclusive lock the concurrency test fails). Plan-based limits (Phases 17-18) will supersede this setting.
+- **Retrieval** (`services/knowledge/search.py::search_entries`, also exposed as `POST /knowledge/search`):
+  the query text is reduced to distinct lower-cased words of at least `KNOWLEDGE_SEARCH_MIN_TERM_LENGTH`
+  characters (at most `KNOWLEDGE_SEARCH_MAX_TERMS`), joined with `|`, and run through `to_tsquery('simple', ...)`
+  against the generated `search_vector` (GIN index), ranked by `ts_rank_cd`. Words are OR-ed because a customer's
+  question rarely contains every word of the right entry. **Only sanitized word tokens reach `to_tsquery`**:
+  customer text can never inject tsquery operators or raise a syntax error (tested with hostile input, and with
+  the sanitizer mutated away). Tokenization checks Unicode categories (letters, combining marks, digits) instead
+  of `\w`, which omits the marks Indic scripts use and would split "डिलीवरी" into fragments (caught by the Hindi test).
+- **Known limits:** lexical only. The `simple` configuration does no stemming or synonyms, so "shipping" does not
+  match "ships", and a question phrased with none of an entry's words finds nothing. Vector search can replace
+  `search_entries` behind the same signature. Non-ASCII matching depends on the database using a UTF-8 encoding
+  with a non-`C` ctype (`C.UTF-8` or `en_US.UTF-8`; verified on `C.UTF-8`), so check this on the managed provider.
+- **For Phases 13-14 (rule 8):** retrieved `title`, `content` and `attributes` are untrusted data, not
+  instructions. Render them into the prompt as escaped data inside a delimited block, cap the total size, and never
+  let an entry change the system prompt, even though only admins write them (a compromised admin account, or
+  later imported website text, is exactly the case this defends).
+- **Not in this phase:** website crawling and file upload (`knowledge_documents` is unused until then). Fetching
+  user-supplied URLs is an SSRF surface (private ranges, redirects, DNS rebinding) and needs its own design.
+
+### Verification status
+
+190 -> 253 passing tests plus 8 live skipped (real PostgreSQL + Redis, clean migrated DB), `ruff`, `mypy --strict`;
+20 targeted mutations of the tenancy, soft-delete, cap, lock, RBAC, sanitizer, ranking and tokenizer logic, all
+caught (the advisory-lock mutant was re-run in a form that compiles, 3/3 caught by the concurrency test); and a
+run against a real `uvicorn` with RS256 JWTs verified against a locally served JWKS: CRUD, English and Hindi
+retrieval, manager 403, cross-tenant 404/403, hostile search text 200, and unknown-`kid`, expired and
+wrong-issuer tokens all 401. Not verified: behavior on a managed PostgreSQL provider (collation, see above).
+
+## DM auto-reply (Phase 13)
+
+`moderate_message` (Phase 11) chains to `generate_dm_reply` **only** for a DM whose verdict is `allow`
+(`payload.channel == "dm"`; comments stop there until Phase 14). The follow-up job is written in the same
+transaction as the verdict (`app/workers/jobs.py::add_job`) and pushed to Redis after commit; the sweeper covers a
+failed push. `app/services/automation/dm_reply.py` then either queues one reply or decides not to.
+
+- **Reasons not to answer** (`_skip_reason`, evaluated before the model call **and again under a conversation row
+  lock right before the reply is recorded**, because the model call takes seconds): message not moderated
+  `allow` (`NOT_CLEARED`), `dm_automation_enabled` off, conversation not AI-active, message older than
+  `DM_REPLY_WINDOW_HOURS`, a human or AI reply already exists after it, a newer answerable customer message exists
+  (a burst gets one reply to the latest, with the whole exchange as context; a newer message that was blocked or
+  escalated does not take the reply), and `max_replies_per_conversation_per_hour` reached (loop protection).
+- **Prompt** (`prompt.py`): fixed rules, then business profile and the top `DM_REPLY_KNOWLEDGE_ENTRIES` knowledge
+  hits as a single `json.dumps` block, so stored text cannot pose as instructions (rule 8). Retrieval query is the
+  last two customer messages so a keyword-less follow-up still finds its entry. Entries that do not fit
+  `DM_REPLY_KNOWLEDGE_MAX_CHARS` are skipped whole. History is the last `DM_REPLY_HISTORY_MESSAGES` turns, excluding
+  internal notes and messages moderation blocked or escalated.
+- **Fail closed:** the model must return `{reply, confidence, needs_human}` (strict schema). A human is asked
+  instead of anything being sent when: output is unparseable (`LOW_CONFIDENCE`), `needs_human` (`MISSING_INFORMATION`),
+  confidence is below the organization's `confidence_threshold`, the reply is empty, exceeds `DM_REPLY_MAX_BYTES`
+  in UTF-8 (never truncated), or **contains a link that does not appear in the business's own profile/knowledge**
+  (so a customer who talks the model into a phishing link gets nothing sent under the business's name).
+- **Sending:** the reply is an outbound `origin=ai`, `status=pending` message plus a `send_instagram_message` job
+  (same transaction, push after commit), i.e. the Phase 9 delivery path unchanged. Usage is recorded with
+  `purpose="dm_reply"`, including when the answer is discarded or escalated.
+- **Provider outage:** `AIGatewayError` -> retry honoring `retry_after`; nothing is sent or escalated meanwhile.
+
+### Known gaps (Phase 13)
+
+- **`off_hours_policy` / `working_hours` are not honored** (their format is not defined anywhere yet); the assistant
+  behaves as `respond`. Per-organization `provider` / `model` overrides in `ai_settings` are also not used yet.
+- **Delivery to Meta is unverified.** The smoke test reached the real send job, which made the Graph request; the
+  development sandbox's egress blocks `graph.instagram.com` (403), so a successful send was never observed. Needs a
+  run with a real connected account.
+- Reply quality against the real model is unverified (the model was a local stub); the live-provider test for
+  moderation is still pending too.
+
+### Verification status
+
+302 tests + 8 live skipped (before the 13b additions below) on real PostgreSQL + Redis from a clean migrated DB, `ruff`, `mypy --strict`; 29
+mutations of the gating, fail-closed, history, retrieval, prompt-escaping, link-guard and chaining logic, all caught
+(one survived at first: the history filter was shadowed by a time filter in the existing test, so a test with
+*earlier* spam was added; the row lock itself is not mutation-tested, as a lock-ordering race cannot be reproduced
+deterministically, but the re-check it protects is, via a takeover during the model call). End to end against real
+`uvicorn` + `arq` workers (events, ai, instagram) with signed webhooks: grounded reply queued and picked up by the
+send worker, threat -> handoff with no reply call, injected phishing link -> handoff, unknown question -> handoff,
+spam -> no reply call, Meta redelivery -> no duplicate (5 classifications, 3 reply calls, 0 tracebacks).
+
+## Settings API and giving up gracefully (Phase 13b)
+
+**Settings API** (`app/api/v1/business.py`, `services/business.py`, owner/admin only via `SETTINGS_MANAGE`):
+`GET|PUT /business/profile` and `GET|PATCH /settings/ai`. Only fields the pipeline actually honors are exposed
+(`working_hours`, `off_hours_policy`, `timezone`, per-org `provider`/`model` and `comment_like_enabled` are not, so the
+UI cannot offer a control that does nothing; unknown fields are 422). `PUT` replaces the whole profile (a field left
+out is cleared). `PATCH` is partial (`false` and `0` are real values; an empty body is 422). `GET` never writes a
+row: an organization that never saved sees the effective defaults. The first save is insert-or-skip on the unique
+`organization_id`, so simultaneous first saves cannot fail or duplicate. Size limits exist because these fields are
+rendered into the model's prompt. `website` must be http(s) because it also feeds the reply link allowlist. Changes are
+audited as field names (profile) or flag/number values (AI settings); text is never written to the audit log;
+no-op saves are not logged.
+
+**Giving up** (`services/automation/escalation.py`, `tracked(..., on_exhausted=...)`): when automation can no longer
+serve a customer, a human is asked instead of nothing happening.
+- A send that fails permanently (inactive account, expired or undecryptable token, non-retryable Meta error) or
+  exhausts its retries marks the message `failed`; if the AI wrote it, a `manual` handoff is opened (idempotent: nothing
+  happens if a human already owns the conversation; human-written messages do not raise one).
+- Moderation or reply jobs that exhaust their retries (provider down) open a `low_confidence` handoff.
+- Found in a real-process run: a send that exhausted retries previously left the message `pending` forever and the
+  customer unanswered. The handoff reason is `manual` because adding a dedicated `delivery_failed` value needs a
+  migration of the enum's CHECK constraint; do that if the inbox should distinguish it.
+
+Verified: 14 mutations of the settings logic and 12 of the escalation logic, all caught (four initially escaped
+because the tests did not cover them: profile `GET` writing a row, unknown fields alongside valid ones, an unapplied
+audit mutant and the undecryptable-token path; tests were added). Real `uvicorn` + workers with signed JWTs:
+the owner configured profile, knowledge entry and DM automation purely through the API, a DM sent before that was
+ignored (no model call), one sent after was moderated and answered from the configured knowledge, a manager got 403,
+and with Meta unreachable the exhausted send ended `failed` with the conversation `human_required`.
+
+## Comment auto-reply (Phase 14)
+
+Same shape as DM replies, for **public** replies to comments (`app/services/automation/comment_reply.py`). The comment
+event handler (Phase 8) already stored each comment as an inbound message (`external_message_id` =
+`comment:<instagram comment id>`, `COMMENT_ID_PREFIX`) and queued moderation; `moderate_message` now chains by channel
+(`REPLY_FUNCTIONS`): a cleared DM goes to `generate_dm_reply`, a cleared comment to `generate_comment_reply`. Nothing
+else is chained, so blocked, escalated and unmoderated comments are never answered.
+
+- **Switch:** `ai_settings.comment_automation_enabled`, independent of `dm_automation_enabled`.
+- **Skip reasons** (checked before the model call and again under the conversation lock): not a comment, not
+  moderated `allow`, automation off, conversation owned by a person, comment older than `COMMENT_REPLY_WINDOW_HOURS`
+  (72), already answered, and the hourly AI-reply cap. "Already answered" is read from the send job
+  (`payload.comment_message_id`), not from message order, because comments on different posts interleave in one
+  conversation. There is no "superseded" rule: each comment is independent.
+- **Prompt:** the shared rules plus a public-channel clause (never personal, order-specific or private details; if the
+  commenter needs those, `needs_human`); only the comment text is sent as the user turn (no history); knowledge
+  retrieved with the comment as the query. Same escaped-data, grounding and link-allowlist defenses as DMs.
+- **Fail closed:** same gates as DMs, with the length limit counted in **characters** (`COMMENT_REPLY_MAX_CHARS`, 300,
+  inclusive; a Hindi reply of 300 characters is fine) and escalated rather than truncated.
+- **Delivery:** outbound `origin=ai` message + `send_comment_reply` job (same transaction, push after commit) that
+  calls `reply_to_comment`; it shares `_deliver` with the DM send, so it has the same capability flag
+  (`FEATURE_COMMENT_REPLY`), token handling, retry behavior and give-up escalation.
+- **Channel separation:** the DM generator refuses comment messages (a requeued or forged job must not DM someone who
+  only commented publicly) and vice versa; both are tested.
+- Refactor in this phase: knowledge retrieval, answer gating (`escalation_reason`) and the prompt rules are shared
+  between the two channels instead of copied; the send handler became `_deliver`. A latent order-dependent query in an
+  existing test (an unfiltered `select(Job)`) was scoped to its organization.
+
+### Known gaps (Phase 14)
+
+- **No private reply** (a DM to the commenter via `send_private_reply`, allowed once per comment within 7 days). It
+  needs a product decision about when to open a DM with someone who did not message first; the Graph method and the
+  `PRIVATE_REPLY` flag exist.
+- **No channel marker on messages**, so the inbox cannot show that an AI reply was public. A `messages.channel`
+  column (needs a migration and a backfill from the `comment:` prefix) is the clean fix.
+- Instagram offers no endpoint to like or hide via this API, so neither is attempted (`comment_like_enabled` is not
+  exposed).
+- Delivery to Meta is unverified for the same reason as DMs (sandbox egress); reply quality against the real model is
+  unverified.
+
+### Verification status
+
+397 tests + 8 live skipped on real PostgreSQL + Redis, `ruff`, `mypy --strict`; 19 mutations of the comment gates, length
+semantics, channel separation, chaining, capability flag and send call, all caught. One initially survived because
+`tracked()` already skips a re-run of a finished job row, so the "re-run" test never reached the already-answered
+check; tests now create a *duplicate job row* (for DMs as well) and the mutants die. Real `uvicorn` + workers with signed
+`comments` webhooks and only comment automation enabled: a DM was ignored (no model call), a delivery question was
+answered from the knowledge base, a threat escalated, a link flood was blocked by rules with no model call, a phishing-link
+attempt went to a human, a redelivered comment created nothing, and with Meta unreachable the send exhausted its retries
+and ended `failed` with a handoff.
+
+## Human takeover (Phase 15)
+
+Takeover, hand-back and resolve existed since Phase 9, but the `human_handoffs` rows that automation opens (threats,
+low confidence, failed sends, exhausted AI jobs) were never advanced: they stayed `open` forever, and there was no queue
+of conversations needing a person. Phase 15 closes that loop.
+
+- **Lifecycle** (`services/conversations/conversations.py::_advance_handoffs`): `take_over` moves the conversation's
+  `open` handoffs to `assigned` (to the person who took over); `hand_back_to_ai` and `resolve` move `open` and `assigned`
+  ones to `resolved` with `resolved_at`. Only that conversation's rows change; a resolved handoff is never
+  re-assigned; taking over a conversation nobody flagged is fine (no handoff row to move). A conversation that needs a
+  person again after hand-back gets a fresh `open` row; history is kept.
+- **Concurrency:** `request_human_handoff` now locks and re-reads the conversation row before deciding, because two
+  automation steps can ask at once (a threat verdict and a failed reply). Without it each saw "AI active" and opened
+  its own handoff. Verified with a deterministic test (hold the row, start three requests, release: exactly one
+  handoff and one audit entry); the mutant without the lock dies 3 of 3 runs. An earlier 10-way `gather` test passed
+  even without the lock, which is why it was replaced as the proof.
+- **Queue** (`app/api/v1/handoffs.py`): `GET /handoffs` (keyset, oldest first, unresolved by default, `status` filter)
+  and `GET /handoffs/counts`. Scoped by tenant, by soft-deleted conversations, and by role: staff see only conversations
+  assigned to them (same rule as the conversation list).
+- **Not included:** automatic release of a takeover left idle (a product decision: how long, and what the customer
+  experiences meanwhile), notifications (email/push), assignment to someone other than yourself, and a dedicated
+  `delivery_failed` handoff reason (needs an enum CHECK migration).
+
+### Verification status
+
+Handoff tests: lifecycle through the real API, queue ordering/filter/pagination/counts, staff and tenant scoping,
+soft-deleted conversations, and the lock. 14 mutations of the lifecycle, scoping and lock: 13 caught, 1 equivalent
+(`counts` reads only the `open` and `assigned` keys of its grouped result, so dropping its `WHERE` clause cannot change
+the response; the clause stays as an efficiency measure). Three mutants initially escaped for want of a test (re-assigning
+a resolved handoff, a soft-deleted conversation's handoff, and the lock) and tests were added.
+
+## Analytics and usage API (Phases 16-17)
+
+Read-only aggregates for the dashboard (`app/api/v1/analytics.py`, `services/analytics.py`). The dashboard screens
+themselves (Phase 18) are frontend work and do not exist yet.
+
+- `GET /analytics/overview` (`ANALYTICS_VIEW`: owner, admin, manager) and `GET /usage` (`SETTINGS_MANAGE`: owner, admin;
+  costs are not for every member). Both take `from`/`to` (inclusive UTC dates; default last 30 days; at most 366;
+  otherwise 422 `INVALID_RANGE`).
+- **Day boundaries:** a range is `[from 00:00 UTC, to+1 00:00 UTC)`, so the end date is included to its last
+  second; per-day buckets use `timezone('UTC', created_at)` so they do not depend on the database session's time zone.
+  Series are zero-filled. Organizations have no timezone setting, so "a day" is a UTC day.
+- **What is counted:** messages exclude internal notes; conversation `by_state` is a current snapshot (not limited to
+  the range) and skips soft-deleted conversations; handoffs are bucketed by creation (opened) and by `resolved_at`
+  (resolved) independently; moderation counts are customer messages by their stored verdict.
+- **Cost honesty:** `estimated_cost` comes from `services/ai/pricing.py`; an unknown (provider, model) prices at zero by
+  design so usage is never lost. The report therefore carries `unpriced_requests` (requests that used tokens but have no
+  price) so a total is never silently understated.
+- **Index:** migration `0004` adds `messages(organization_id, created_at)`, since these queries aggregate one
+  organization's messages over a range.
+- **Not included:** comparison against plan limits (no plans are seeded and billing is not built), CSV export, caching, and
+  per-user or per-conversation breakdowns.
+
+### Verification status
+
+20 analytics tests on real PostgreSQL with exact expected numbers from seeded data at fixed timestamps: both range
+boundaries (first instant in, last second in, the next instant out), the UTC-day bucket, zero-filled series, snapshot
+versus range semantics, soft-deleted conversations, handoffs opened versus resolved, internal-note exclusion, role
+gates, tenant isolation, range validation (including exactly 366 days) and decimal sums. 22 mutations, all caught
+(one target initially matched twice and was re-run with context). Not mutation-tested: replacing `timezone('UTC', ...)`
+with a plain cast behaves identically while the database session is already in UTC, as in the test database, so no test
+can tell them apart; the choice is defensive. Real `uvicorn` + workers: after the comment scenario the live overview
+matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason, moderation 2 allowed / 1 blocked /
+1 escalated, 5 usage rows split 3 moderation and 2 comment replies).

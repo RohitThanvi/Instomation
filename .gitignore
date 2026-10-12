@@ -17,6 +17,9 @@ htmlcov/
 node_modules/
 dist/
 
+# Local Redis snapshots
+*.rdb
+
 # Tooling
 .idea/
 .vscode/

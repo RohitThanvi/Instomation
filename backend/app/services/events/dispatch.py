@@ -6,22 +6,47 @@ Comment/DM *automation* (classification, AI response, sending) is built in later
 registers itself here instead of changing the dispatch loop.
 """
 
+import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.instagram import WebhookEvent
+from app.workers.jobs import add_job
+from app.workers.queues import QueueName
 
 logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
+class DeferredJob:
+    job_id: uuid.UUID
+    queue: QueueName
+    function: str
+
+
+@dataclass(slots=True)
 class EventContext:
     session: AsyncSession
     redis: Redis
+    deferred_jobs: list[DeferredJob] = field(default_factory=list)
+
+    async def defer_job(
+        self,
+        queue: QueueName,
+        function: str,
+        payload: dict[str, Any],
+        organization_id: uuid.UUID,
+    ) -> None:
+        """Record follow-up work in the same transaction as the handler's writes. The caller of
+        `dispatch` pushes it to Redis only after that transaction commits, so a job can never run
+        before the rows it refers to exist; if the push fails the PENDING row is swept up later."""
+        job = await add_job(self.session, queue, function, payload, organization_id)
+        self.deferred_jobs.append(DeferredJob(job.id, queue, function))
 
 
 EventHandler = Callable[[EventContext, WebhookEvent], Awaitable[None]]

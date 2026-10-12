@@ -22,11 +22,13 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 7-8 | Webhook receiver + event queue | Done (signed receiver, dedup, fast-return, EVENTS queue dispatch) |
 | 9 | Conversations / messages | Done (customer/conversation/message resolution, event handlers, inbox API, human takeover) |
 | 10 | AI gateway | Done (Groq/OpenAI abstraction, retry/backoff, circuit breaker, layered rate limits, cost tracking) |
-| 11 | Moderation | Planned |
-| 12 | Knowledge base | Planned |
-| 13-14 | DM + comment automation | Planned |
-| 15 | Human takeover | Planned |
-| 16-18 | Dashboard, analytics, usage/cost | Planned |
+| 11 | Moderation | Done (rules + LLM safety classifier, fail-closed policy, runs on the `ai` queue before any reply; live-provider check pending, see below) |
+| 12 | Knowledge base | Done (entries CRUD + full-text retrieval API, per-org cap, tenant-scoped, audited; website/file ingestion not included) |
+| 13 | DM automation | Done (moderated DMs get a grounded AI reply or a human handoff; configurable via `/business/profile` and `/settings/ai`; failed sends and exhausted AI jobs escalate to a human; fail-closed gates; queued through the existing send job; delivery to Meta not yet verified, see ARCHITECTURE.md) |
+| 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; private replies not included; delivery to Meta not yet verified) |
+| 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
+| 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
+| 18 | Dashboard (frontend screens) | Planned (the API it needs exists; see docs/FRONTEND_HANDOVER.md) |
 | 19-20 | Tests, deployment | Planned |
 
 Update this table in the same commit that completes a phase.
@@ -152,7 +154,7 @@ cd backend
 WORKER_QUEUE=maintenance arq app.workers.settings.WorkerSettings   # one process per queue
 ```
 
-Queues: `events`, `ai`, `instagram`, `maintenance`. A worker refuses to start for a queue with no
+Queues: `events`, `ai` (moderation; reply generation joins in Phases 13-14), `instagram`, `maintenance`. A worker refuses to start for a queue with no
 registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.py`) and registered in
 `app/workers/settings.py::HANDLERS`. Full design in `docs/ARCHITECTURE.md`.
 

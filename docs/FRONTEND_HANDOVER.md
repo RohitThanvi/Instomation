@@ -52,6 +52,55 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
 granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
     `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
   - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
+  - Knowledge base (needs `settings_manage`, i.e. owner/admin; manager and staff get 403, so hide the screen):
+    - `GET /api/v1/knowledge/entries?kind=&cursor=&limit=` (paginated, oldest first) -> `{ id, kind:
+      faq|product|service|policy|website|custom, title, content, attributes, created_at, updated_at }`
+    - `POST /api/v1/knowledge/entries` `{ kind, title, content, attributes? }` -> 201 entry. Limits: title 1-300,
+      content 1-4000 characters (trimmed); `attributes` is a flat object of at most 20 keys (names 1-50 chars,
+      values string <=500 / number / boolean / null; no nesting). 409 `KNOWLEDGE_LIMIT_REACHED` when the
+      organization is at its entry cap: show the message, do not retry.
+    - `GET|PATCH|DELETE /api/v1/knowledge/entries/{id}`. PATCH is partial (omit a field to keep it; null is not
+      accepted; send `attributes: {}` to clear them); an empty PATCH is 422. DELETE returns 204.
+    - `GET|PUT /api/v1/business/profile` (owner/admin). PUT replaces the whole profile, so submit the full form: a
+      field left out is cleared. `{ brand_name<=200, description<=2000, industry<=120, location<=200, website
+      (http/https URL), contact_info{<=10 items, value<=200}, policies{<=10 items, value<=500}, communication_style:
+      strict_business|professional|moderately_casual|friendly, custom_instructions<=2000 }`. GET returns the same
+      shape (empty values until saved). Anything else is 422.
+    - `GET|PATCH /api/v1/settings/ai` (owner/admin) -> `{ dm_automation_enabled, comment_automation_enabled,
+      confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
+      1-100 }`. PATCH takes any subset (at least one). `dm_automation_enabled` is the master switch for AI replies to
+      DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` is the independent master switch for
+      public AI replies to comments (it does not depend on the DM switch). Public replies appear in the same
+      conversation thread as outbound `origin: ai` messages; messages carry no channel field yet, so the UI cannot
+      tell a public comment reply from a DM (a comment's inbound message has an `external_message_id` starting with
+      `comment:`).
+    - Handoff queue (any member; staff only see conversations assigned to them, like the conversation list):
+      `GET /api/v1/handoffs?status=&cursor=&limit=` lists conversations that need a person, longest-waiting first.
+      Without `status` it returns unresolved ones (`open`, `assigned`); `status=resolved` is the history. Item:
+      `{ id, conversation_id, customer{id,external_user_id,username,display_name}, conversation_state,
+      conversation_priority, reason: low_confidence|missing_information|threat|complaint|manual|..., status,
+      assigned_user_id, created_at, resolved_at }`. `GET /api/v1/handoffs/counts` -> `{ open, assigned }` for a badge.
+      Handoffs move by themselves: `POST /conversations/{id}/takeover` -> `assigned` (to the caller),
+      `/hand-back` and `/resolve` -> `resolved`. There is no endpoint to edit a handoff directly.
+    - Analytics (owner/admin/manager; staff get 403). Query params `from` and `to` are UTC dates, `to` inclusive;
+      default is the 30 days ending today; at most 366 days; `from` after `to` or a longer range is 422
+      `INVALID_RANGE`. Days are UTC because organizations have no timezone setting yet, so a chart's "today" can differ
+      from the owner's local day.
+      `GET /api/v1/analytics/overview` -> `{ range{start,end}, conversations{new, new_leads, by_state{ai_active,
+      human_required, human_active, resolved}} (by_state is a snapshot of right now, not of the range),
+      messages{inbound, outbound_ai, outbound_human, outbound_failed} (internal notes excluded),
+      automation{ai_replies_sent, handoffs_opened, handoffs_resolved, handoffs_by_reason{...}} (every reason present,
+      zero when none), moderation{allowed, blocked, escalated, blocked_by_category{spam|sexual|offensive: n}},
+      daily[{date, inbound, outbound}] }` (one entry per day in the range, zero-filled, ready to chart).
+    - Usage and cost (owner/admin only; managers and staff get 403). `GET /api/v1/usage?from=&to=` ->
+      `{ range, totals{requests, input_tokens, output_tokens, estimated_cost}, failed_requests, unpriced_requests,
+      average_latency_ms|null, by_purpose[{purpose, ..., estimated_cost}] (costliest first), by_model[{provider, model,
+      ...}], daily[{date, requests, estimated_cost}] }`. `estimated_cost` is a decimal **string** in USD (do not
+      parse it as a float). It is an estimate from a built-in price table. If `unpriced_requests` > 0 some requests used a
+      model with no price on file, so the cost understates real spend: show a notice instead of a confident total.
+    - `POST /api/v1/knowledge/search` `{ query (1-500), limit (1-20, default 5) }` -> `[{ entry, score }]`, best
+      first. This is exactly what the assistant retrieves, so use it for a "test your knowledge base" box.
+      Matching is by whole words (no stemming): "ship" does not match "shipping". Say so in the UI hint.
 - Roles: `owner`, `admin`, `manager`, `staff` (lowercase on the wire, as are all enum values such as instagram
   account `status` and `account_type`). Hide or disable UI by role, but the server is authoritative (403).
 - **Conversations are live** (inbox): `GET /api/v1/conversations` (filters `state|priority|is_lead|tag`, oldest first),
@@ -59,7 +108,7 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
   `GET|POST /conversations/{id}/messages` (reply only while `human_required|human_active`, else 409), and
   `POST /conversations/{id}/notes`. Enums are lowercase (`ai_active`, `human_required`, `human_active`, `resolved`).
   Codes: `CONVERSATION_NOT_FOUND` (404), `CONVERSATION_NOT_HUMAN_CONTROLLED` (409).
-- Planned, not built yet: `/api/v1/{comments,automations,business,knowledge,analytics,settings,usage}`.
+- Planned, not built yet: `/api/v1/{comments,automations}` (no router exists; verified against `backend/app/api/v1/`).
   Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
 - Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.

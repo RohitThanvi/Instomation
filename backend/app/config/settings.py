@@ -65,8 +65,10 @@ class Settings(BaseSettings):
     ai_primary_provider: str = "groq"
     ai_fallback_provider: str | None = None
     groq_api_key: SecretStr = SecretStr("")
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.3-70b-versatile"
     openai_api_key: SecretStr = SecretStr("")
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     ai_request_timeout_seconds: float = Field(default=20.0, gt=0)
     ai_max_attempts: int = Field(default=3, ge=1)
@@ -77,6 +79,44 @@ class Settings(BaseSettings):
     ai_rate_limit_per_minute: int = Field(default=60, ge=1)
     ai_rate_limit_per_minute_per_tenant: int = Field(default=20, ge=1)
     ai_default_max_tokens: int = Field(default=300, ge=1)
+
+    # ---- Knowledge base ----
+    # Per-organization cap on active entries; plan-based limits (Phase 17-18) will supersede it.
+    knowledge_max_entries: int = Field(default=500, ge=1)
+    # Retrieval turns free text into OR-ed word terms: shorter words are noise ("do", "is", "to"),
+    # and the cap bounds query cost against very long messages.
+    knowledge_search_min_term_length: int = Field(default=3, ge=1)
+    knowledge_search_max_terms: int = Field(default=12, ge=1)
+
+    # ---- DM auto-reply ----
+    dm_reply_history_messages: int = Field(default=10, ge=1)  # recent turns given to the model
+    dm_reply_knowledge_entries: int = Field(default=5, ge=0)  # entries retrieved per reply
+    dm_reply_knowledge_max_chars: int = Field(default=3000, ge=0)  # total retrieved text budget
+    # Instagram rejects DMs over 1000 bytes; a longer model answer is escalated, never truncated.
+    dm_reply_max_bytes: int = Field(default=1000, ge=100)
+    # Meta only allows replies within this window after the customer's message (a late retry after
+    # an outage must not try to send outside it).
+    dm_reply_window_hours: int = Field(default=24, ge=1)
+    # Headroom on top of the organization's max_response_tokens for the JSON wrapper.
+    dm_reply_json_overhead_tokens: int = Field(default=80, ge=0)
+
+    # ---- Comment auto-reply ----
+    # A public reply to a long-stale comment reads oddly, so older comments are left alone.
+    comment_reply_window_hours: int = Field(default=72, ge=1)
+    # Public replies are short on purpose; longer model output is escalated, never truncated.
+    comment_reply_max_chars: int = Field(default=300, ge=50)
+
+    # ---- Moderation (safety classifier; runs before any AI response generation) ----
+    # Instagram caps DMs at 1000 bytes and comments at 2200 characters, so longer input cannot come
+    # from Meta. Rather than truncating (which lets an attacker pad a threat past the cut), such
+    # input is escalated to a human unclassified.
+    moderation_max_input_chars: int = Field(default=2200, ge=50)
+    moderation_max_tokens: int = Field(default=60, ge=20)
+    # Below this self-reported confidence a non-threat verdict is not trusted; a human decides.
+    moderation_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    # Structural spam limits (cheap, deterministic, and they protect AI quota from spam floods).
+    moderation_max_links: int = Field(default=2, ge=0)
+    moderation_max_mentions: int = Field(default=5, ge=0)
 
     worker_queue: QueueName = QueueName.MAINTENANCE
     worker_max_jobs: int = Field(default=10, ge=1)

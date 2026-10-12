@@ -15,9 +15,7 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import ClerkTokenVerifier, http_jwks_fetcher
 from app.db.session import create_engine, create_session_factory
-from app.services.ai.gateway import AIGateway
-from app.services.ai.providers.groq import GroqProvider
-from app.services.ai.providers.openai import OpenAIProvider
+from app.services.ai.factory import build_ai_gateway
 from app.services.instagram.client import GraphInstagramApi
 from app.services.instagram.crypto import TokenCipher
 from app.workers.queue import JobQueue
@@ -41,21 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.redis = redis
         app.state.job_queue = JobQueue(arq_pool, app.state.session_factory)
         app.state.instagram_api = GraphInstagramApi(http_client, settings)
-        ai_providers = {
-            "groq": GroqProvider(
-                http_client, settings.groq_api_key.get_secret_value(), settings.groq_model
-            ),
-            "openai": OpenAIProvider(
-                http_client, settings.openai_api_key.get_secret_value(), settings.openai_model
-            ),
-        }
-        app.state.ai_gateway = AIGateway(
-            ai_providers,
-            settings.ai_primary_provider,
-            settings.ai_fallback_provider,
-            redis,
-            settings,
-        )
+        app.state.ai_gateway = build_ai_gateway(http_client, redis, settings)
         app.state.token_cipher = TokenCipher.from_settings(settings)
         app.state.token_verifier = ClerkTokenVerifier(
             fetch_jwks=http_jwks_fetcher(settings.clerk_jwks_url, http_client),

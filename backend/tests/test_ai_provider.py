@@ -10,7 +10,9 @@ MESSAGES = [AIMessage(role="user", content="hi")]
 
 
 def _provider(handler: httpx.MockTransport, cls: type = GroqProvider) -> GroqProvider:
-    return cls(httpx.AsyncClient(transport=handler), "test-key", "test-model")
+    return cls(
+        httpx.AsyncClient(transport=handler), "https://provider.test/v1", "test-key", "test-model"
+    )
 
 
 async def test_successful_completion_parses_text_and_usage() -> None:
@@ -40,7 +42,9 @@ async def test_missing_api_key_fails_without_a_request() -> None:
         called = True
         return httpx.Response(200, json={})
 
-    provider = GroqProvider(httpx.AsyncClient(transport=httpx.MockTransport(handler)), "", "m")
+    provider = GroqProvider(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)), "https://groq.test/v1", "", "m"
+    )
     with pytest.raises(AIProviderError):
         await provider.complete(MESSAGES, max_tokens=10, temperature=0, timeout_seconds=5)
     assert not called
@@ -97,7 +101,10 @@ async def test_openai_provider_uses_its_own_base_url() -> None:
         return httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}], "usage": {}})
 
     provider = OpenAIProvider(
-        httpx.AsyncClient(transport=httpx.MockTransport(handler)), "k", "gpt-4o-mini"
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        "https://api.openai.com/v1",
+        "k",
+        "gpt-4o-mini",
     )
     await provider.complete(MESSAGES, max_tokens=10, temperature=0, timeout_seconds=5)
     assert seen == ["https://api.openai.com/v1/chat/completions"]
