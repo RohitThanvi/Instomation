@@ -18,3 +18,15 @@ testpaths = ["tests"]
 [tool.ruff.lint.per-file-ignores]
 "migrations/versions/*" = ["E501"]
 "tests/*" = ["S105", "S106", "S603"]
+
+[tool.coverage.run]
+source = ["app"]
+# SQLAlchemy's async engine runs on greenlets; without this, code executed after an
+# `await` on the database is under-reported (knowledge entries showed 49% instead of 96%).
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+# Measured 95.13% on 452 tests; kept about a point below to absorb timing-dependent paths. Raise it as coverage grows.
+fail_under = 94
+show_missing = true
+skip_covered = true

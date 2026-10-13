@@ -15,7 +15,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
 | F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard, inbox); automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
-| 3 | PostgreSQL models + Alembic | Done (23 tables, migration `0001`) |
+| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0004`, head is `0004`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
@@ -29,7 +29,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
 | 18 | Dashboard (frontend screens) | Planned (the API it needs exists; see docs/FRONTEND_HANDOVER.md) |
-| 19-20 | Tests, deployment | In progress (done: compose runs one worker per queue with liveness checks, `.env.example` matches the code, deployment regression tests; pending: CI hardening, coverage gate, docs/DEPLOYMENT.md, a real container run) |
+| 19-20 | Tests, deployment | Mostly done (compose runs one worker per queue with liveness checks; `.env.example` matches the code; deployment and worker-registry regression tests; coverage gate at 94% in `pyproject.toml`; `docs/DEPLOYMENT.md`; CI staged in `docs/ci/` with migration-drift and frontend jobs; the API and every worker verified as real processes. Pending: a real container run, because the compose stack and images have never been built, and activating the staged workflows) |
 
 Update this table in the same commit that completes a phase.
 
@@ -81,7 +81,7 @@ Development-only mocks must be clearly labeled and never enabled in production.
 ```
 backend/   FastAPI app, workers, migrations, tests
 frontend/  Vite SPA
-docs/      ARCHITECTURE.md (and API/DB/AI/SECURITY/DEPLOYMENT docs as they land)
+docs/      ARCHITECTURE, DATABASE, SECURITY, FRONTEND, FRONTEND_HANDOVER, DEPLOYMENT, ci/ (staged workflows)
 ```
 
 ## Engineering rules
@@ -104,10 +104,22 @@ docs/      ARCHITECTURE.md (and API/DB/AI/SECURITY/DEPLOYMENT docs as they land)
 
 ```bash
 cp .env.example .env            # fill in values
-docker compose up -d            # postgres, redis, api (worker and frontend join in later phases)
+docker compose up -d            # postgres, redis, migrate, api, one worker per queue, frontend
 ```
 
-Detailed setup, migrations, worker, frontend and test commands are added as each phase lands.
+The compose stack and its images have never been built or run (there was no Docker in the development
+sandbox); treat them as unverified until you have run them. Without Docker, run the processes directly:
+
+```bash
+cd backend && pip install -r requirements-dev.txt && alembic upgrade head
+uvicorn app.main:app --reload                                       # API
+WORKER_QUEUE=events arq app.workers.settings.WorkerSettings         # repeat for ai, instagram, maintenance
+
+# backend checks (tests need a real PostgreSQL and Redis: TEST_DATABASE_URL, TEST_REDIS_URL)
+ruff check . && ruff format --check . && mypy app && alembic check && pytest --cov
+
+cd ../frontend && npm ci && npm run lint && npm run typecheck && npm run format:check && npm test && npm run build
+```
 
 ## Environment variables
 
@@ -119,6 +131,8 @@ See `.env.example` (documented inline). Never commit real secrets.
 - `docs/DATABASE.md`: schema conventions, tables, indexes, tenancy and idempotency rules.
 - `docs/FRONTEND.md`: frontend structure, conventions, run/test, screen status.
 - `docs/SECURITY.md`: auth, tenancy, secrets, token handling, retention on disconnect.
+- `docs/FRONTEND_HANDOVER.md`: API contracts and conventions for building the remaining screens.
+- `docs/DEPLOYMENT.md`: process layout, environment, migrate-on-release, scaling rules, Meta webhook setup, free-tier path.
 
 ## Database and migrations
 
@@ -142,10 +156,16 @@ Never edit a schema by hand; every change ships an Alembic migration. See `docs/
 
 ## CI
 
-The backend workflow is staged at `docs/ci/backend-ci.yml` (ruff, format check, pytest with Postgres and
-Redis services). GitHub only accepts pushes to `.github/workflows/` from a token with the `workflow`
-scope, so activate it by copying the file to `.github/workflows/backend-ci.yml` (via the web UI or a
-token with that scope), then delete the staged copy.
+Two workflows are staged in `docs/ci/`: `backend-ci.yml` (ruff, format check, mypy, `alembic upgrade head`
+followed by `alembic check` on an empty database to catch migration drift, then pytest with the coverage
+gate against PostgreSQL and Redis services) and `frontend-ci.yml` (lint, typecheck, format check, test,
+build). Their commands were run locally; the workflows themselves have not run on GitHub. GitHub only
+accepts pushes to `.github/workflows/` from a token with the `workflow` scope, so activate them by copying
+both files to `.github/workflows/` (via the web UI or such a token) and deleting the staged copies.
+
+Coverage is configured in `backend/pyproject.toml` with `concurrency = ["greenlet", "thread"]`; without it
+SQLAlchemy-async code is badly under-reported (88% instead of 94% overall when first measured). The gate
+(`fail_under`) is 94%, about a point below the measured 95.13%; raise it as coverage grows.
 
 ## Workers
 
@@ -154,7 +174,7 @@ cd backend
 WORKER_QUEUE=maintenance arq app.workers.settings.WorkerSettings   # one process per queue
 ```
 
-Queues: `events`, `ai` (moderation; reply generation joins in Phases 13-14), `instagram`, `maintenance`. A worker refuses to start for a queue with no
+Queues: `events`, `ai` (moderation and DM/comment reply generation), `instagram`, `maintenance`. A worker refuses to start for a queue with no
 registered handlers. Handlers are wrapped with `tracked` (`app/workers/runtime.py`) and registered in
 `app/workers/settings.py::HANDLERS`. Full design in `docs/ARCHITECTURE.md`.
 
@@ -189,3 +209,20 @@ verifies membership; with exactly one membership the header may be omitted. Pagi
 | GET | `/api/v1/conversations/{id}/messages` | Message history (paginated) |
 | POST | `/api/v1/conversations/{id}/messages` | Human reply — only while AI is silenced (`human_required`/`human_active`); delivered asynchronously via the `instagram` queue |
 | POST | `/api/v1/conversations/{id}/notes` | Internal note (never sent to Instagram) |
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/handoffs` | Handoff queue, longest-waiting first (cursor-paginated; `status` filter, default unresolved). STAFF sees only conversations assigned to them. |
+| GET | `/api/v1/handoffs/counts` | Counts for the queue badge; same scoping |
+| GET/PUT | `/api/v1/business/profile` | Brand profile, policies and communication style the AI answers from (requires `settings_manage`) |
+| GET/PATCH | `/api/v1/settings/ai` | DM and comment automation switches, confidence threshold, token and temperature limits, hourly reply cap (requires `settings_manage`) |
+| GET/POST | `/api/v1/knowledge/entries` | List / create knowledge entries (requires `settings_manage`; per-org cap `KNOWLEDGE_MAX_ENTRIES`) |
+| GET/PATCH/DELETE | `/api/v1/knowledge/entries/{id}` | Fetch / update / soft-delete an entry (requires `settings_manage`) |
+| POST | `/api/v1/knowledge/search` | Full-text retrieval over active entries (requires `settings_manage`) |
+| GET | `/api/v1/analytics/overview` | Conversation, message, automation and moderation statistics plus a daily series, over a UTC date range (requires `analytics_view`) |
+| GET | `/api/v1/usage` | AI requests, tokens and estimated cost by purpose, model and day, with unpriced requests counted separately (owner/admin only: requires `settings_manage`) |
+
+This table lists every endpoint in the generated OpenAPI document (35, including `/health` and `/ready`)
+plus the two Meta-facing routes that are deliberately excluded from it: `/api/v1/instagram/webhooks` and
+`/api/v1/instagram/oauth/callback`. Request and response shapes: `/docs` in development, and
+`docs/FRONTEND_HANDOVER.md`.

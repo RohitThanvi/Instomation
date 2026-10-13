@@ -596,7 +596,7 @@ matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason
 1 escalated, 5 usage rows split 3 moderation and 2 comment replies).
 
 
-## Deployment (Phases 19-20, in progress)
+## Deployment (Phases 19-20)
 
 - **Bug found and fixed:** `docker-compose.yml` ran a single worker with `WORKER_QUEUE=maintenance`. A worker consumes
   exactly the queue named by `WORKER_QUEUE`, so under compose nothing would have processed the `events`, `ai` or
@@ -614,8 +614,28 @@ matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason
 - **Guarded by `tests/test_deployment.py`** (structural, because Docker is not available in every environment): every
   queue has exactly one worker, workers are health-checked and wait for migrations and Redis, migrations run once
   before the API, no literal secrets in compose, the image is non-root. 8 regressions mutation-checked, all caught.
-- **Not verified:** the compose stack and the images were never actually run (no Docker in the development sandbox).
-- **Pending:** CI hardening (alembic drift check, frontend job; workflow files must go in `docs/ci/` with a repo-only token), a
-  coverage gate (note: SQLAlchemy async needs `concurrency = greenlet` in coverage config or service coverage is
-  badly under-reported, e.g. knowledge entries showed 46% despite heavy testing), a registration test for
-  `HANDLERS`, and `docs/DEPLOYMENT.md`.
+- **CI hardening:** `docs/ci/backend-ci.yml` now sets every required setting (the staged version omitted
+  `META_REDIRECT_URI` and others, so `alembic` could not even start: verified by running it with that environment),
+  runs `alembic upgrade head && alembic check` on an empty database, and runs the suite under the coverage gate.
+  `docs/ci/frontend-ci.yml` runs lint, typecheck, format check, test and build. Every command was run locally first;
+  `alembic check` was mutation-checked (an unmigrated column makes it exit non-zero, a clean tree exits 0). The
+  workflows live in `docs/ci/` because the push token cannot write `.github/workflows/`, and they have not run on GitHub.
+- **Coverage gate:** `[tool.coverage]` in `backend/pyproject.toml` sets `concurrency = ["greenlet", "thread"]`.
+  Without it the total was 88% and knowledge `entries.py` 49%; with it 94% and 96%. After the registry test the total
+  is 95.13%; `fail_under` is 94.
+- **Handler registration:** `tests/test_worker_registry.py` pins the exact function names registered per queue in
+  `HANDLERS` and the cron jobs, because arq matches enqueued jobs to handlers by name and an unmatched name is never
+  run. Five mutants (dropped events handler, dropped comment send, dropped DM reply, dropped cron job, duplicated
+  handler) were all caught. It cannot see the string literals at enqueue call sites; the end-to-end worker tests and the
+  real-process run below cover those.
+- **Real processes (no Docker):** against migrated PostgreSQL 16 and Redis, the API and one `arq` worker per queue
+  were started as separate processes: `/health` and `/ready` returned 200 and every worker's `--check` exited 0. A
+  genuinely HMAC-signed webhook returned 200 and was marked `done` by the events worker, a replay returned 200
+  without a second row, and tampered, unsigned and wrong-verify-token requests returned 403. Idle memory was about
+  97 MB for the API and 85 MB per worker. No bug was found in this run.
+- **`docs/DEPLOYMENT.md`** documents process layout, environment, migrate-on-release, scaling rules, Meta webhook
+  setup and the free-tier path, with its own verification status.
+- **README:** the API table was missing 12 endpoints and is now generated from the OpenAPI document (35) plus the two
+  Meta-facing routes hidden from it; the "migration 0001" mention now says head is 0004.
+- **Not verified:** the compose stack and the images were never built or run (no Docker in the development sandbox);
+  the CI workflows have not run on GitHub; delivery to Meta's Graph API; behaviour on managed PostgreSQL or Redis.

@@ -32,6 +32,11 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       CLERK_JWKS_URL: https://clerk.test/.well-known/jwks.json
       CLERK_ISSUER: https://clerk.test
+      FRONTEND_BASE_URL: http://localhost:5173
+      META_APP_ID: ci
+      META_APP_SECRET: ci
+      META_WEBHOOK_VERIFY_TOKEN: ci
+      META_REDIRECT_URI: http://localhost:8000/api/v1/instagram/oauth/callback
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,4 +48,17 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy app
-      - run: pytest -q
+      - name: Generate a throwaway token-encryption key
+        run: |
+          key=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+          echo "TOKEN_ENCRYPTION_KEY=$key" >> "$GITHUB_ENV"
+      - name: Migrations apply cleanly and match the models
+        env:
+          PGPASSWORD: instomation
+          DATABASE_URL: postgresql+asyncpg://instomation:instomation@localhost:5432/instomation_drift
+        run: |
+          psql -h localhost -U instomation -d postgres -c "CREATE DATABASE instomation_drift"
+          alembic upgrade head
+          alembic check
+      - name: Tests with the coverage gate (threshold lives in pyproject.toml)
+        run: pytest -q --cov
