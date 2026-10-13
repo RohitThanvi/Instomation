@@ -5,6 +5,22 @@ x-backend: &backend
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
     REDIS_URL: redis://redis:6379/0
 
+x-worker: &worker
+  <<: *backend
+  command: ["arq", "app.workers.settings.WorkerSettings"]
+  healthcheck:
+    # Fails when the worker is dead or stuck (it refreshes a liveness key every WORKER_HEALTH_CHECK_SECONDS).
+    test: ["CMD", "arq", "app.workers.settings.WorkerSettings", "--check"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -55,17 +71,32 @@ services:
       redis:
         condition: service_healthy
 
-  worker:
-    <<: *backend
-    command: ["arq", "app.workers.settings.WorkerSettings"]
+  # One process per queue (see app/workers/queues.py): a worker consumes exactly the queue named by
+  # WORKER_QUEUE, so every queue needs its own service or its jobs are never processed. They scale and
+  # fail independently. Keep maintenance at one replica (it runs the cron sweepers).
+  worker-events:
+    <<: *worker
+    environment:
+      <<: *backend-env
+      WORKER_QUEUE: events
+
+  worker-ai:
+    <<: *worker
+    environment:
+      <<: *backend-env
+      WORKER_QUEUE: ai
+
+  worker-instagram:
+    <<: *worker
+    environment:
+      <<: *backend-env
+      WORKER_QUEUE: instagram
+
+  worker-maintenance:
+    <<: *worker
     environment:
       <<: *backend-env
       WORKER_QUEUE: maintenance
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
 
   frontend:
     build:

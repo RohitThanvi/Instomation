@@ -29,7 +29,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
 | 18 | Dashboard (frontend screens) | Planned (the API it needs exists; see docs/FRONTEND_HANDOVER.md) |
-| 19-20 | Tests, deployment | Planned |
+| 19-20 | Tests, deployment | In progress (done: compose runs one worker per queue with liveness checks, `.env.example` matches the code, deployment regression tests; pending: CI hardening, coverage gate, docs/DEPLOYMENT.md, a real container run) |
 
 Update this table in the same commit that completes a phase.
 

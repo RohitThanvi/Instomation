@@ -103,5 +103,6 @@ class WorkerSettings:
     job_timeout = _settings.job_timeout_seconds
     poll_delay = _settings.worker_poll_delay_seconds
     keep_result = 300
+    health_check_interval = _settings.worker_health_check_seconds
     on_startup = _on_startup
     on_shutdown = _on_shutdown

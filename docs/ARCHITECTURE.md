@@ -594,3 +594,28 @@ with a plain cast behaves identically while the database session is already in U
 can tell them apart; the choice is defensive. Real `uvicorn` + workers: after the comment scenario the live overview
 matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason, moderation 2 allowed / 1 blocked /
 1 escalated, 5 usage rows split 3 moderation and 2 comment replies).
+
+
+## Deployment (Phases 19-20, in progress)
+
+- **Bug found and fixed:** `docker-compose.yml` ran a single worker with `WORKER_QUEUE=maintenance`. A worker consumes
+  exactly the queue named by `WORKER_QUEUE`, so under compose nothing would have processed the `events`, `ai` or
+  `instagram` queues: webhooks would be accepted and then never handled. (Smoke tests missed it because workers were
+  started by hand.) Compose now has `worker-events`, `worker-ai`, `worker-instagram` and `worker-maintenance`; keep
+  maintenance at one replica because it runs the cron sweepers.
+- **Worker liveness:** arq's health key refreshed hourly by default, so a stuck worker looked healthy for up to an hour.
+  `WORKER_HEALTH_CHECK_SECONDS` (default 30) sets the refresh; compose health checks run
+  `arq app.workers.settings.WorkerSettings --check`. Verified against a real worker: healthy -> 0, frozen with SIGSTOP
+  -> fails within about the interval, recovers when unfrozen.
+- **`.env.example` drift fixed:** it told operators to set `CLERK_SECRET_KEY`, a backend `CLERK_PUBLISHABLE_KEY` and
+  `SENTRY_DSN`, none of which the backend reads (tokens are verified through JWKS; there is no error-tracking
+  integration), and it omitted 20 settings the code does read. Tests now require every setting to be documented and
+  nothing unknown to be.
+- **Guarded by `tests/test_deployment.py`** (structural, because Docker is not available in every environment): every
+  queue has exactly one worker, workers are health-checked and wait for migrations and Redis, migrations run once
+  before the API, no literal secrets in compose, the image is non-root. 8 regressions mutation-checked, all caught.
+- **Not verified:** the compose stack and the images were never actually run (no Docker in the development sandbox).
+- **Pending:** CI hardening (alembic drift check, frontend job; workflow files must go in `docs/ci/` with a repo-only token), a
+  coverage gate (note: SQLAlchemy async needs `concurrency = greenlet` in coverage config or service coverage is
+  badly under-reported, e.g. knowledge entries showed 46% despite heavy testing), a registration test for
+  `HANDLERS`, and `docs/DEPLOYMENT.md`.

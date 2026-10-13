@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     moderation_max_mentions: int = Field(default=5, ge=0)
 
     worker_queue: QueueName = QueueName.MAINTENANCE
+    # How often a worker refreshes its liveness key (it expires one second later), so a worker
+    # that is alive but stuck fails `arq ... --check` within about this long, not after arq's
+    # default of an hour.
+    worker_health_check_seconds: int = Field(default=30, ge=5)
     worker_max_jobs: int = Field(default=10, ge=1)
     worker_poll_delay_seconds: float = Field(default=1.0, ge=0.1)
     job_timeout_seconds: int = Field(default=120, ge=1)
