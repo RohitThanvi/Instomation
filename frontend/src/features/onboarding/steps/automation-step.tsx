@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { StepFooter, StepFrame } from '../step-frame'
-import { DEFAULT_AUTOMATION, normalizeAutomation } from '../automation'
+import { DEFAULT_AUTOMATION, HANDOFF_RULES, normalizeAutomation } from '../automation'
 import { automationPreferencesSchema, type AutomationPreferences } from '@/api/business'
 import { FEATURES } from '@/api/instagram'
 import { ErrorState } from '@/components/ui/error-state'
@@ -40,12 +40,6 @@ function AutomationForm({ defaults, isEnabled, onSubmit, onBack }: FormProps) {
       label: 'Reply to direct messages',
       description: 'Answer people who message you first.',
     },
-    {
-      feature: FEATURES.privateReply,
-      name: 'private_reply_from_comments',
-      label: 'Continue a comment in private',
-      description: 'Send one private message to a commenter, within Instagram’s time limit.',
-    },
   ] as const
   const available = replyControls.filter((control) => isEnabled(control.feature))
 
@@ -74,22 +68,16 @@ function AutomationForm({ defaults, isEnabled, onSubmit, onBack }: FormProps) {
         )}
       </div>
       <div className="space-y-3">
-        <h2 className="text-ink text-sm font-medium">When to bring in a person</h2>
-        <ToggleRow
-          label="Someone asks for a person"
-          description="Hand over as soon as a customer wants to talk to a human."
-          registration={form.register('handoff_on_request')}
-        />
-        <ToggleRow
-          label="Someone is upset or complaining"
-          description="Hand over so a person can respond with care."
-          registration={form.register('handoff_on_complaint')}
-        />
-        <ToggleRow
-          label="The assistant is not confident"
-          description="Hand over instead of guessing when it is unsure."
-          registration={form.register('handoff_on_low_confidence')}
-        />
+        <h2 className="text-ink text-sm font-medium">When it brings in a person</h2>
+        <p className="text-ink-muted text-sm">
+          This is automatic and cannot be switched off. The assistant hands the conversation to you
+          when:
+        </p>
+        <ul className="text-ink-muted list-disc space-y-1 pl-5 text-sm">
+          {HANDOFF_RULES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ul>
       </div>
       <StepFooter onBack={onBack} submitLabel="Continue" />
     </form>

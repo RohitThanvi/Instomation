@@ -9,22 +9,34 @@ const only =
 
 describe('normalizeAutomation', () => {
   it('forces off any reply action the server has not enabled', () => {
-    const all = {
-      ...DEFAULT_AUTOMATION,
-      reply_to_comments: true,
-      reply_to_dms: true,
-      private_reply_from_comments: true,
-    }
-    expect(normalizeAutomation(all, only(FEATURES.dmReply))).toMatchObject({
+    const all = { reply_to_comments: true, reply_to_dms: true }
+    expect(normalizeAutomation(all, only(FEATURES.dmReply))).toEqual({
       reply_to_comments: false,
       reply_to_dms: true,
-      private_reply_from_comments: false,
     })
   })
 
-  it('leaves the handoff preferences untouched', () => {
-    const custom = { ...DEFAULT_AUTOMATION, handoff_on_complaint: false }
-    expect(normalizeAutomation(custom, only()).handoff_on_complaint).toBe(false)
+  it('gates each action on its own capability, in both directions', () => {
+    const all = { reply_to_comments: true, reply_to_dms: true }
+    expect(normalizeAutomation(all, only(FEATURES.commentReply))).toEqual({
+      reply_to_comments: true,
+      reply_to_dms: false,
+    })
+    expect(normalizeAutomation(all, only())).toEqual({
+      reply_to_comments: false,
+      reply_to_dms: false,
+    })
+  })
+
+  it('keeps a reply action the server has enabled and the owner chose', () => {
+    expect(
+      normalizeAutomation(DEFAULT_AUTOMATION, only(FEATURES.commentReply, FEATURES.dmReply)),
+    ).toEqual(DEFAULT_AUTOMATION)
+  })
+
+  it('never turns on something the owner switched off', () => {
+    const off = { reply_to_comments: false, reply_to_dms: false }
+    expect(normalizeAutomation(off, only(...Object.values(FEATURES)))).toEqual(off)
   })
 })
 
@@ -36,6 +48,17 @@ describe('buildCommitments', () => {
     )
     expect(will.join(' ')).toMatch(/message you first/i)
     expect(will.join(' ')).not.toMatch(/comments on your posts/i)
+  })
+
+  it('describes handoffs only alongside a reply action, and never promises a private reply', () => {
+    const none = buildCommitments(
+      { reply_to_comments: false, reply_to_dms: false },
+      only(...Object.values(FEATURES)),
+    )
+    expect(none.will).toEqual([])
+    const some = buildCommitments(DEFAULT_AUTOMATION, only(...Object.values(FEATURES)))
+    expect(some.will.join(' ')).toMatch(/hand a conversation to a person/i)
+    expect(some.will.join(' ')).not.toMatch(/private|asks for one|sounds upset/i)
   })
 
   it('promises nothing before automation preferences exist', () => {

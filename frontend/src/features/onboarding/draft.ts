@@ -36,8 +36,8 @@ export function loadDraft(organizationId: string): OnboardingDraft {
 }
 
 /**
- * Onboarding answers cannot be saved server-side yet, so they are kept in this browser
- * (per workspace) until the backend endpoints exist.
+ * Onboarding answers are kept in this browser (per workspace) while the steps are filled in, and
+ * sent to the server once, on the last step.
  */
 export function useOnboardingDraft(organizationId: string | null) {
   const [draft, setDraft] = useState<OnboardingDraft>(() =>

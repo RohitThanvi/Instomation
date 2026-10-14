@@ -512,6 +512,15 @@ else is chained, so blocked, escalated and unmoderated comments are never answer
 - **No private reply** (a DM to the commenter via `send_private_reply`, allowed once per comment within 7 days). It
   needs a product decision about when to open a DM with someone who did not message first; the Graph method and the
   `PRIVATE_REPLY` flag exist.
+- **Handoff is not configurable and has no explicit "asks for a person" or "complaint" detector.** A conversation goes
+  to a person when moderation sees a threat or is unsure, when a reply's confidence is below `confidence_threshold`
+  (the one tunable), or when the model sets `needs_human`. The prompt tells the model to do that for missing
+  information, refunds, complaints, legal matters, custom quotes and order or booking changes, so those depend on
+  model judgment, which has not been checked against the live provider. There is no per-organization switch for any
+  of it; the onboarding screen states this instead of offering toggles.
+- **`FEATURE_PRIVATE_REPLY` defaults on although nothing sends private replies**, so the capabilities list, and the
+  dashboard's supported-actions card built from it, overstates what the product does. Recommended: default it to off
+  until the feature exists. Onboarding ignores the flag and never offers it.
 - **No channel marker on messages**, so the inbox cannot show that an AI reply was public. A `messages.channel`
   column (needs a migration and a backfill from the `comment:` prefix) is the clean fix.
 - Instagram offers no endpoint to like or hide via this API, so neither is attempted (`comment_like_enabled` is not
@@ -567,8 +576,11 @@ Read-only aggregates for the dashboard (`app/api/v1/analytics.py`, `services/ana
 section (Phase 18, `frontend/src/features/dashboard`) now consumes `GET /analytics/overview` for the last 7, 30 or 90 UTC
 days. Two response details the UI depends on: `conversations.by_state` is the present, not the period, and
 `daily.outbound` / `messages.outbound_ai` count every outbound message including failed deliveries, while
-`automation.ai_replies_sent` counts only sent ones. `handoffs_by_reason` is zero-filled and includes `manual`. The
-other Phase 18 screens are not built yet.
+`automation.ai_replies_sent` counts only sent ones. `handoffs_by_reason` is zero-filled and includes `manual`.
+Onboarding activation (`frontend/src/api/business.ts`) saves through `PUT /business/profile`, the knowledge entry
+endpoints and `PATCH /settings/ai`; the exact request bodies it builds were replayed against the real API on
+PostgreSQL (all 200/201) and the real responses parsed with the frontend schemas. The other Phase 18 screens are not
+built yet.
 
 - `GET /analytics/overview` (`ANALYTICS_VIEW`: owner, admin, manager) and `GET /usage` (`SETTINGS_MANAGE`: owner, admin;
   costs are not for every member). Both take `from`/`to` (inclusive UTC dates; default last 30 days; at most 366;

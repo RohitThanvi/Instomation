@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { HANDOFF_RULES } from './automation'
 import { OnboardingPage } from './onboarding-page'
 import { CAPABILITIES_WIRE, organization } from '@/test/fixtures'
 import { emptyPage, installMockApi } from '@/test/mock-api'
@@ -43,8 +44,13 @@ describe('automation step: capability gating', () => {
     mountAutomation(CAPABILITIES_WIRE)
     expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
     expect(screen.getByText('Reply to direct messages')).toBeInTheDocument()
-    expect(screen.getByText('Continue a comment in private')).toBeInTheDocument()
     expect(document.body.textContent).not.toMatch(UNSUPPORTED_WORDING)
+  })
+
+  it('never offers a private reply: the server may list it, but nothing ever sends one', async () => {
+    mountAutomation(withEnabled({ FEATURE_PRIVATE_REPLY: true }))
+    expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
+    expect(screen.queryByText(/in private|private (reply|message)/i)).not.toBeInTheDocument()
   })
 
   it('still never renders comment-like or profile controls even if a server claims they are enabled', async () => {
@@ -56,26 +62,29 @@ describe('automation step: capability gating', () => {
       }),
     )
     expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
-    expect(screen.getAllByRole('switch')).toHaveLength(3 + 3) // 3 reply actions + 3 handoff rules
+    expect(screen.getAllByRole('switch')).toHaveLength(2) // comments and DMs, nothing else
     expect(document.body.textContent).not.toMatch(UNSUPPORTED_WORDING)
   })
 
   it('hides a reply action the server has switched off', async () => {
-    mountAutomation(withEnabled({ FEATURE_PRIVATE_REPLY: false }))
-    expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
-    expect(screen.queryByText('Continue a comment in private')).not.toBeInTheDocument()
+    mountAutomation(withEnabled({ FEATURE_COMMENT_REPLY: false }))
+    expect(await screen.findByText('Reply to direct messages')).toBeInTheDocument()
+    expect(screen.queryByText('Reply to comments')).not.toBeInTheDocument()
     expect(screen.getByText(/some actions are not available/i)).toBeInTheDocument()
   })
 
-  it('explains itself, and offers only handoff rules, when no reply action is enabled', async () => {
-    mountAutomation(
-      withEnabled({
-        FEATURE_COMMENT_REPLY: false,
-        FEATURE_DM_REPLY: false,
-        FEATURE_PRIVATE_REPLY: false,
-      }),
-    )
+  it('explains itself, and offers no controls, when no reply action is enabled', async () => {
+    mountAutomation(withEnabled({ FEATURE_COMMENT_REPLY: false, FEATURE_DM_REPLY: false }))
     expect(await screen.findByText(/no reply actions are available/i)).toBeInTheDocument()
-    expect(screen.getAllByRole('switch')).toHaveLength(3)
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+  })
+
+  it('states when it hands over as fact, not as switches, because the backend has no such settings', async () => {
+    mountAutomation(CAPABILITIES_WIRE)
+    expect(await screen.findByText(/cannot be switched off/i)).toBeInTheDocument()
+    for (const rule of HANDOFF_RULES) expect(screen.getByText(rule)).toBeInTheDocument()
+    expect(
+      screen.queryByText(/someone is upset|someone asks for a person/i),
+    ).not.toBeInTheDocument()
   })
 })

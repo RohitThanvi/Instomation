@@ -109,7 +109,8 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
   `POST /conversations/{id}/notes`. Enums are lowercase (`ai_active`, `human_required`, `human_active`, `resolved`).
   Codes: `CONVERSATION_NOT_FOUND` (404), `CONVERSATION_NOT_HUMAN_CONTROLLED` (409).
 - Planned, not built yet: `/api/v1/{comments,automations}` (no router exists; verified against `backend/app/api/v1/`).
-  Code against typed interfaces in `src/api/`, and show "not yet available" states rather than fake data.
+  Code against typed interfaces in `src/api/`, and show an explicit "not available yet" state rather than fake data
+  (there is currently no shared component for it: the old one was deleted when nothing used it).
 - The browser never supplies a tenant it does not belong to and never sees Instagram tokens.
 - Backend `CORS_ALLOWED_ORIGINS` and `CLERK_AUTHORIZED_PARTIES` must include the frontend origin.
 

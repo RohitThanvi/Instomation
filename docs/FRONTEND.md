@@ -72,11 +72,9 @@ src/routes/      route components (lazy-loaded), providers, router
   - **Server limits.** The API filters by `state`, `priority`, `is_lead` and `tag` only, orders by creation time **oldest
     first**, and has no text search or latest-activity sort. Search and sort therefore run in the browser over what is
     loaded, and the list says so.
-- **Not yet available.** An API function whose endpoint was missing rejects with `NotYetAvailableError` without
-  touching the network, and the screen renders `<NotYetAvailable>`; no fabricated data, no fake success. The one
-  function still doing this is `saveBusinessSetup` (onboarding steps 4-7 and activation): the backend now has
-  `PUT /business/profile` and `PATCH /settings/ai`, so it is stale and should be wired to them, but until then the
-  answers stay in this browser (per workspace).
+- **No placeholder endpoints.** Every function in `src/api/` calls a real endpoint. For a screen whose endpoint does
+  not exist yet (`/comments`, `/automations`), render an explicit unavailable state: no fabricated data, no fake
+  success. The old shared `NotYetAvailable` component was deleted once nothing used it.
 - **Retries.** Only network failures and `AUTH_PROVIDER_UNAVAILABLE` are retried (bounded).
 - **Design.** All colors, radii, shadows, fonts and motion are tokens in `src/index.css` (`@theme`).
 - **No dead code.** A primitive is added together with the first screen that uses it.
@@ -86,7 +84,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | Screen                                                                  | State                                                                                 |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                  |
-| 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Steps 4-7 and activation are local-only: the backend endpoints do not exist yet |
+| 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Answers are kept in the browser while filling in, then saved to the API on activation |
 | 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                           |
 | 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
 | 5. Automation rules                                                     | Next                                                                                  |
@@ -106,8 +104,21 @@ src/routes/      route components (lazy-loaded), providers, router
   simply empty until an assign endpoint exists.
 - `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.
 
-- `PUT /api/v1/business/profile` and `PATCH /api/v1/settings/ai` now exist: implement `saveBusinessSetup` against them
-  (reconciling the onboarding answers with the real schemas) and remove the local-only notice from onboarding steps 4-7.
+- **Activation saves for real** (`saveBusinessSetup`, owners and admins only, matching `settings_manage`), in this
+  order so a failure can never leave replies on over a half-saved business, and so every step is safe to repeat:
+  1. `GET` then `PUT /business/profile`. The PUT replaces the whole profile, so the answers are laid over what is
+     stored: location, contact details and policies survive. Category becomes `industry`, tone becomes
+     `communication_style`, notes become `custom_instructions`; blank website and notes are sent as `null`.
+  2. Products and services become knowledge entries (`kind` product/service, the price and link written into the
+     text the assistant reads). An entry with the same kind and name is updated, not duplicated; nothing is deleted.
+  3. `PATCH /settings/ai` with `dm_automation_enabled` and `comment_automation_enabled`, last.
+
+  The calls, bodies and responses were checked against the real backend on PostgreSQL (see ARCHITECTURE.md).
+- **What onboarding no longer offers.** The backend has no private-reply behavior and no handoff settings, so the
+  "continue a comment in private" toggle and the three "bring in a person" toggles were removed rather than saved to
+  nowhere. The automation step now states when the assistant hands over (`HANDOFF_RULES`); that list mirrors the
+  backend and must change with it. Previously the review screen promised handoffs on request and on complaints,
+  which the pipeline never did explicitly.
 - Onboarding has no server-side "completed" flag, so a user with a workspace is not forced back into it; the sidebar
   keeps a "Setup guide" link.
 - The initial bundle is dominated by Clerk and React (~440 kB min, ~130 kB gzip). Recharts (~366 kB) is a separate

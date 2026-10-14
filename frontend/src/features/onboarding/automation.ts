@@ -4,10 +4,6 @@ import { FEATURES } from '@/api/instagram'
 export const DEFAULT_AUTOMATION: AutomationPreferences = {
   reply_to_comments: true,
   reply_to_dms: true,
-  private_reply_from_comments: false,
-  handoff_on_request: true,
-  handoff_on_complaint: true,
-  handoff_on_low_confidence: true,
 }
 
 type IsEnabled = (feature: string) => boolean
@@ -18,13 +14,21 @@ export function normalizeAutomation(
   isEnabled: IsEnabled,
 ): AutomationPreferences {
   return {
-    ...values,
     reply_to_comments: values.reply_to_comments && isEnabled(FEATURES.commentReply),
     reply_to_dms: values.reply_to_dms && isEnabled(FEATURES.dmReply),
-    private_reply_from_comments:
-      values.private_reply_from_comments && isEnabled(FEATURES.privateReply),
   }
 }
+
+/**
+ * When the assistant steps aside. Not settings: the pipeline decides this for every reply, and
+ * the model, not a rule, recognises the kinds of message that need a person.
+ */
+export const HANDOFF_RULES: readonly string[] = [
+  'It cannot answer from your business information.',
+  'Its confidence in the reply is below the threshold.',
+  'The message reads as a threat.',
+  'The model recognises a refund, complaint, legal matter, custom quote, or a change to an order or booking.',
+]
 
 /** What the assistant will and will not do, derived from the chosen settings and server capabilities. */
 export function buildCommitments(
@@ -36,14 +40,10 @@ export function buildCommitments(
   if (settings?.reply_to_comments)
     will.push('Reply to comments on your posts in your chosen voice.')
   if (settings?.reply_to_dms) will.push('Reply to people who message you first.')
-  if (settings?.private_reply_from_comments)
-    will.push('Send one private message to a commenter, within Instagram’s time limit.')
-  if (settings?.handoff_on_request)
-    will.push('Hand the conversation to a person when someone asks for one.')
-  if (settings?.handoff_on_complaint)
-    will.push('Hand over when someone sounds upset or raises a complaint.')
-  if (settings?.handoff_on_low_confidence)
-    will.push('Hand over when it is not confident in its answer.')
+  if (will.length > 0) {
+    will.push('Hand a conversation to a person when it cannot answer or is not confident.')
+    will.push('Hand over messages that read as threats, and aim to pass refunds and complaints on.')
+  }
 
   const willNot = [
     'Reply in a conversation once it has been handed to a person.',
