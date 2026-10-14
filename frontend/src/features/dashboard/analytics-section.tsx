@@ -1,17 +1,25 @@
-import { isNotYetAvailable } from '@/api/unavailable'
+import { useState } from 'react'
+import {
+  dashboardRangeSchema,
+  DASHBOARD_RANGES,
+  DEFAULT_DASHBOARD_RANGE,
+  type DashboardRange,
+} from '@/api/analytics'
 import { can } from '@/auth/permissions'
 import { useRequiredOrganization } from '@/auth/session-context'
 import { ErrorState } from '@/components/ui/error-state'
 import { Notice } from '@/components/ui/notice'
-import { NotYetAvailable } from '@/components/ui/not-yet-available'
+import { SelectField } from '@/components/ui/select-field'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AnalyticsView } from './analytics-view'
-import { useDashboardOverview } from './use-dashboard'
+import { RANGE_LABELS } from './range-labels'
+import { useAnalyticsOverview } from './use-dashboard'
 
 export function AnalyticsSection() {
   const { role } = useRequiredOrganization()
   const allowed = can(role, 'analytics_view')
-  const overview = useDashboardOverview(allowed)
+  const [range, setRange] = useState<DashboardRange>(DEFAULT_DASHBOARD_RANGE)
+  const overview = useAnalyticsOverview(range, allowed)
 
   if (!allowed) {
     return (
@@ -21,26 +29,34 @@ export function AnalyticsSection() {
       </Notice>
     )
   }
-  if (overview.isPending) return <Skeleton className="h-64 w-full" />
-  if (overview.isError) {
-    if (isNotYetAvailable(overview.error)) {
-      return (
-        <NotYetAvailable feature="Analytics">
-          <p>
-            Message volume, conversations, leads and how much the assistant handles on its own will
-            appear here once the analytics service is live.
-          </p>
-          <p>Nothing is estimated or sampled in the meantime.</p>
-        </NotYetAvailable>
-      )
-    }
-    return (
-      <ErrorState
-        error={overview.error}
-        title="We could not load your analytics"
-        onRetry={() => void overview.refetch()}
-      />
-    )
-  }
-  return <AnalyticsView overview={overview.data} />
+  return (
+    <div className="space-y-4">
+      <div className="max-w-48">
+        <SelectField
+          label="Period"
+          value={range}
+          onChange={(event) => {
+            setRange(dashboardRangeSchema.parse(event.target.value))
+          }}
+        >
+          {DASHBOARD_RANGES.map((value) => (
+            <option key={value} value={value}>
+              {RANGE_LABELS[value]}
+            </option>
+          ))}
+        </SelectField>
+      </div>
+      {overview.isPending ? (
+        <Skeleton className="h-64 w-full" />
+      ) : overview.isError ? (
+        <ErrorState
+          error={overview.error}
+          title="We could not load your analytics"
+          onRetry={() => void overview.refetch()}
+        />
+      ) : (
+        <AnalyticsView overview={overview.data} />
+      )}
+    </div>
+  )
 }

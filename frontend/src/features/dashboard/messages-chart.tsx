@@ -8,15 +8,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import type { MessagePoint } from '@/api/analytics'
+import type { DailyMessages } from '@/api/analytics'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatCount, formatShortDate } from '@/lib/format'
 
 const CHART_HEIGHT = 280
 const SERIES = [
-  { key: 'received', label: 'Received', color: 'var(--color-ink-subtle)' },
-  { key: 'ai_replies', label: 'AI replies', color: 'var(--color-accent-600)' },
-  { key: 'human_replies', label: 'Human replies', color: 'var(--color-info-600)' },
+  { key: 'inbound', label: 'Received', color: 'var(--color-ink-subtle)' },
+  { key: 'outbound', label: 'Outgoing', color: 'var(--color-accent-600)' },
 ] as const
 
 const AXIS_PROPS = {
@@ -26,20 +25,22 @@ const AXIS_PROPS = {
   fontSize: 12,
 } as const
 
-export function MessagesChart({ points }: { points: readonly MessagePoint[] }) {
+export function MessagesChart({ points }: { points: readonly DailyMessages[] }) {
+  // The API zero-fills every day in the period, so "no activity" means all zeros, not no points.
+  const hasActivity = points.some((point) => point.inbound > 0 || point.outbound > 0)
   return (
     <Card className="lg:col-span-2">
       <CardHeader>
         <CardTitle>Messages over time</CardTitle>
       </CardHeader>
       <CardContent>
-        {points.length === 0 ? (
+        {!hasActivity ? (
           <p className="text-ink-muted text-sm">No messages in this period.</p>
         ) : (
           <>
             <div
               role="img"
-              aria-label="Line chart of messages per day: received, AI replies and human replies. The same data is available in the table that follows."
+              aria-label="Line chart of messages per day: received and outgoing, including any that failed to deliver. The same data is available in the table that follows."
             >
               <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
                 <LineChart data={[...points]} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>

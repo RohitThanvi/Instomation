@@ -52,9 +52,12 @@ src/routes/      route components (lazy-loaded), providers, router
 - **OAuth return.** Meta returns to `/settings/instagram?status=connected|error&reason=CODE`. Every documented reason
   has its own message; unknown or malformed reasons get a generic one and query text is never echoed.
 - **Tenant keys.** Tenant data is cached under `tenantKey(orgId, ...)`, so switching workspaces cannot show stale rows.
-- **Dashboard.** The Instagram cards and the "reconnect" banner use live data and work for every role. Analytics are
-  gated by `analytics_view` (staff see an explanatory notice and no request is made). Charts always ship with a text
-  alternative: a labelled `role="img"` plus a data table.
+- **Dashboard.** The Instagram cards and the "reconnect" banner use live data and work for every role. Analytics call
+  the live `GET /api/v1/analytics/overview` (`src/api/analytics.ts`, validated against the real response shape) for the
+  last 7, 30 (default) or 90 UTC days, and are gated by `analytics_view` (staff see an explanatory notice and no
+  request is made). The conversation-state card is the current state, not the period; the chart's outgoing line counts
+  every outbound message including failed deliveries, and the totals card "Replies sent by AI" counts only sent ones.
+  Charts always ship with a text alternative: a labelled `role="img"` plus a data table.
 - **Inbox.** Backed by the live conversations API (`src/api/conversations.ts`, hooks in `features/inbox/use-inbox.ts`).
   The UI shows what the server returns and does no optimistic updates: every action returns the updated conversation,
   which replaces the cached copy, and lists are then refetched. Rules it enforces, mirroring the backend:
@@ -69,11 +72,11 @@ src/routes/      route components (lazy-loaded), providers, router
   - **Server limits.** The API filters by `state`, `priority`, `is_lead` and `tag` only, orders by creation time **oldest
     first**, and has no text search or latest-activity sort. Search and sort therefore run in the browser over what is
     loaded, and the list says so.
-- **Not yet available.** Endpoints that do not exist yet (`business`, `settings`, and later `comments`,
-  `automations`, `knowledge`, `analytics`, `usage`) are typed in `src/api/` and reject with
-  `NotYetAvailableError` without touching the network; the screen renders `<NotYetAvailable>`. No fabricated data,
-  no fake success. Onboarding answers for steps 4-7 stay in this browser (per workspace) until
-  `saveBusinessSetup` can call a real endpoint.
+- **Not yet available.** An API function whose endpoint was missing rejects with `NotYetAvailableError` without
+  touching the network, and the screen renders `<NotYetAvailable>`; no fabricated data, no fake success. The one
+  function still doing this is `saveBusinessSetup` (onboarding steps 4-7 and activation): the backend now has
+  `PUT /business/profile` and `PATCH /settings/ai`, so it is stale and should be wired to them, but until then the
+  answers stay in this browser (per workspace).
 - **Retries.** Only network failures and `AUTH_PROVIDER_UNAVAILABLE` are retried (bounded).
 - **Design.** All colors, radii, shadows, fonts and motion are tokens in `src/index.css` (`@theme`).
 - **No dead code.** A primitive is added together with the first screen that uses it.
@@ -84,7 +87,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                  |
 | 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Steps 4-7 and activation are local-only: the backend endpoints do not exist yet |
-| 3. Dashboard (live Instagram health + role-aware analytics placeholder) | Done. Analytics render "not yet available" until the endpoint ships                   |
+| 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                           |
 | 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
 | 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Planned                                                                               |
@@ -103,15 +106,17 @@ src/routes/      route components (lazy-loaded), providers, router
   simply empty until an assign endpoint exists.
 - `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.
 
-- When `/api/v1/business` and `/api/v1/settings` ship, implement `saveBusinessSetup` and remove the local-only
-  notice from onboarding steps 4-7.
+- `PUT /api/v1/business/profile` and `PATCH /api/v1/settings/ai` now exist: implement `saveBusinessSetup` against them
+  (reconciling the onboarding answers with the real schemas) and remove the local-only notice from onboarding steps 4-7.
 - Onboarding has no server-side "completed" flag, so a user with a workspace is not forced back into it; the sidebar
   keeps a "Setup guide" link.
 - The initial bundle is dominated by Clerk and React (~440 kB min, ~130 kB gzip). Recharts (~366 kB) is a separate
   chunk loaded only when analytics data exists.
-- `src/api/analytics.ts` is the UI's _proposed_ contract (totals, messages per day, conversations by state). Reconcile
-  it with the real response when `/api/v1/analytics` ships, then add a range selector (7d/30d/90d; the API function
-  already takes a range) and replace the rejection in `fetchDashboardOverview` with `client.request`.
+- `src/api/analytics.ts` was reconciled with the real `/api/v1/analytics/overview` response. The old guessed shape had
+  an `automation_rate` and a `human_replies` series that the API does not provide; they were dropped rather than
+  estimated. The response was checked by parsing a genuine one captured from the backend on PostgreSQL. The vitest
+  config pins `TZ=America/Los_Angeles` so a date helper that follows the viewer's clock instead of UTC fails here.
+- The `/usage` endpoint (owner/admin only) has no frontend client yet.
 - `GET /auth/me` has no caller now that the temporary "Signed in" card is gone (it was the only user, so the wrapper was
   removed as dead code). Re-add `fetchIdentity` when a screen needs the identity, for example the admin flag.
 - No CSP header yet: Clerk's frontend API host is instance-specific and needs to be templated into nginx.

@@ -14,11 +14,11 @@ export function ConversationStates({ counts }: { counts: ConversationStateCounts
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Conversations</CardTitle>
+        <CardTitle>Conversations right now</CardTitle>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
-          <p className="text-ink-muted text-sm">No conversations in this period.</p>
+          <p className="text-ink-muted text-sm">No conversations yet.</p>
         ) : (
           <ul className="space-y-4">
             {STATES.map(({ key, label, bar }) => (

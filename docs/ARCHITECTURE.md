@@ -563,8 +563,12 @@ a resolved handoff, a soft-deleted conversation's handoff, and the lock) and tes
 
 ## Analytics and usage API (Phases 16-17)
 
-Read-only aggregates for the dashboard (`app/api/v1/analytics.py`, `services/analytics.py`). The dashboard screens
-themselves (Phase 18) are frontend work and do not exist yet.
+Read-only aggregates for the dashboard (`app/api/v1/analytics.py`, `services/analytics.py`). The dashboard's analytics
+section (Phase 18, `frontend/src/features/dashboard`) now consumes `GET /analytics/overview` for the last 7, 30 or 90 UTC
+days. Two response details the UI depends on: `conversations.by_state` is the present, not the period, and
+`daily.outbound` / `messages.outbound_ai` count every outbound message including failed deliveries, while
+`automation.ai_replies_sent` counts only sent ones. `handoffs_by_reason` is zero-filled and includes `manual`. The
+other Phase 18 screens are not built yet.
 
 - `GET /analytics/overview` (`ANALYTICS_VIEW`: owner, admin, manager) and `GET /usage` (`SETTINGS_MANAGE`: owner, admin;
   costs are not for every member). Both take `from`/`to` (inclusive UTC dates; default last 30 days; at most 366;

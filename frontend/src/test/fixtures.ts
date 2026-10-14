@@ -1,4 +1,4 @@
-import type { DashboardOverview } from '@/api/analytics'
+import type { AnalyticsOverview } from '@/api/analytics'
 import type { Organization } from '@/api/organizations'
 
 export const ORG_ID = '3f0c2a9e-6d4b-4c1a-9b7e-1a2b3c4d5e6f'
@@ -41,22 +41,37 @@ export function accountWire(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/** Test-only sample matching the UI's expected analytics contract. Never imported by app code. */
-export const DASHBOARD_OVERVIEW: DashboardOverview = {
-  range: '30d',
-  totals: {
-    messages_received: 1240,
-    ai_replies_sent: 880,
-    open_conversations: 37,
-    leads_captured: 52,
-    automation_rate: 0.62,
+/**
+ * `GET /api/v1/analytics/overview` as the backend serializes it. Internally consistent on
+ * purpose: the daily series sums to the message totals (outgoing includes the 2 AI messages that
+ * failed, so `outbound_ai` is 93 while `ai_replies_sent` is 91, as in real data) and handoff reasons
+ * sum to the total.
+ */
+export const ANALYTICS_OVERVIEW: AnalyticsOverview = {
+  range: { start: '2026-09-01', end: '2026-09-03' },
+  conversations: {
+    new: 18,
+    new_leads: 7,
+    by_state: { ai_active: 20, human_required: 5, human_active: 12, resolved: 60 },
   },
-  messages_over_time: [
-    { date: '2026-09-01', received: 40, ai_replies: 28, human_replies: 6 },
-    { date: '2026-09-02', received: 55, ai_replies: 41, human_replies: 9 },
-    { date: '2026-09-03', received: 31, ai_replies: 22, human_replies: 4 },
+  messages: { inbound: 126, outbound_ai: 93, outbound_human: 19, outbound_failed: 2 },
+  automation: {
+    ai_replies_sent: 91,
+    handoffs_opened: 9,
+    handoffs_resolved: 6,
+    handoffs_by_reason: { customer_requested: 4, complaint: 3, low_confidence: 2 },
+  },
+  moderation: {
+    allowed: 130,
+    blocked: 6,
+    escalated: 3,
+    blocked_by_category: { spam: 5, offensive: 1 },
+  },
+  daily: [
+    { date: '2026-09-01', inbound: 40, outbound: 34 },
+    { date: '2026-09-02', inbound: 55, outbound: 50 },
+    { date: '2026-09-03', inbound: 31, outbound: 28 },
   ],
-  conversations_by_state: { ai_active: 20, human_required: 5, human_active: 12, resolved: 60 },
 }
 
 /** A valid v4-shaped UUID derived from a number, so fixtures stay readable and unique. */

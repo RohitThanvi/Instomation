@@ -12,5 +12,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     restoreMocks: true,
+    // Not UTC on purpose: date handling that wrongly follows the viewer's clock must fail here.
+    env: { TZ: 'America/Los_Angeles' },
   },
 })
