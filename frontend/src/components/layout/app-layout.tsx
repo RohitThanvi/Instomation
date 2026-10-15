@@ -1,25 +1,42 @@
 import { UserButton } from '@clerk/clerk-react'
-import { LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
+import { BookOpen, LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Brand } from './brand'
 import { OrganizationSwitcher } from './organization-switcher'
+import { can, type Permission } from '@/auth/permissions'
+import { useSession } from '@/auth/session-context'
 import { ROUTES } from '@/config/constants'
 import { cn } from '@/lib/cn'
 
-const NAV_ITEMS = [
+interface NavItem {
+  to: string
+  label: string
+  icon: typeof LayoutDashboard
+  /** Hidden from roles without it; the server still enforces access. */
+  requires?: Permission
+}
+
+const NAV_ITEMS: readonly NavItem[] = [
   { to: ROUTES.home, label: 'Overview', icon: LayoutDashboard },
   { to: ROUTES.inbox, label: 'Inbox', icon: MessageSquare },
+  { to: ROUTES.knowledge, label: 'Knowledge', icon: BookOpen, requires: 'settings_manage' },
   { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
   { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },
-] as const
+]
 
 export function AppLayout() {
+  const { currentOrganization } = useSession()
+  const visibleItems = NAV_ITEMS.filter(
+    ({ requires }) =>
+      requires === undefined ||
+      (currentOrganization !== null && can(currentOrganization.role, requires)),
+  )
   return (
     <div className="bg-canvas flex min-h-dvh">
       <aside className="border-line bg-surface hidden w-60 shrink-0 flex-col gap-8 border-r px-4 py-6 md:flex">
         <Brand />
         <nav aria-label="Primary" className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+          {visibleItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}

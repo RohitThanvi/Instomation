@@ -29,5 +29,6 @@ export const ROUTES = {
   signUp: '/sign-up',
   onboarding: '/onboarding',
   inbox: '/inbox',
+  knowledge: '/knowledge',
   instagramSettings: '/settings/instagram',
 } as const

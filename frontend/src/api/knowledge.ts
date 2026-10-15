@@ -16,6 +16,9 @@ export const knowledgeEntrySchema = z.object({
 })
 export type KnowledgeEntry = z.infer<typeof knowledgeEntrySchema>
 
+/** Mirrors `backend/app/schemas/knowledge.py`. */
+export const KNOWLEDGE_LIMITS = { title: 300, content: 4000, query: 500 } as const
+
 export interface NewKnowledgeEntry {
   kind: KnowledgeKind
   title: string
@@ -24,19 +27,39 @@ export interface NewKnowledgeEntry {
 
 const base = `${API_PREFIX}/knowledge/entries`
 /** The server caps `limit` at 100 and an organization holds at most 500 entries. */
-const PAGE_LIMIT = 100
+const LIST_ALL_PAGE_LIMIT = 100
 const MAX_PAGES = 20
 const entryPageSchema = paginated(knowledgeEntrySchema)
+
+export interface KnowledgePageParams {
+  kind: KnowledgeKind | null
+  cursor: string | null
+  limit: number
+}
+
+/** One page, oldest first, optionally narrowed to a kind. */
+export function fetchKnowledgePage(
+  client: ApiClient,
+  { kind, cursor, limit }: KnowledgePageParams,
+  signal?: AbortSignal,
+) {
+  return client.request({
+    path: base,
+    schema: entryPageSchema,
+    query: { kind, cursor, limit },
+    signal,
+  })
+}
 
 /** Every active entry, following the cursor. Bounded so a misbehaving cursor cannot loop forever. */
 export async function listKnowledgeEntries(client: ApiClient): Promise<KnowledgeEntry[]> {
   const entries: KnowledgeEntry[] = []
-  let cursor: string | undefined
+  let cursor: string | null = null
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await client.request({
-      path: base,
-      schema: entryPageSchema,
-      query: { limit: PAGE_LIMIT, cursor },
+    const result = await fetchKnowledgePage(client, {
+      kind: null,
+      cursor,
+      limit: LIST_ALL_PAGE_LIMIT,
     })
     entries.push(...result.items)
     if (result.next_cursor === null) return entries
@@ -59,5 +82,22 @@ export function updateKnowledgeEntry(
     path: `${base}/${id}`,
     schema: knowledgeEntrySchema,
     body: patch,
+  })
+}
+
+export function deleteKnowledgeEntry(client: ApiClient, id: string) {
+  return client.request({ method: 'DELETE', path: `${base}/${id}`, schema: z.undefined() })
+}
+
+export const searchHitSchema = z.object({ entry: knowledgeEntrySchema, score: z.number() })
+export type SearchHit = z.infer<typeof searchHitSchema>
+
+/** Exactly what the assistant would retrieve for this text, best match first. */
+export function searchKnowledge(client: ApiClient, query: string) {
+  return client.request({
+    method: 'POST',
+    path: `${API_PREFIX}/knowledge/search`,
+    schema: z.array(searchHitSchema),
+    body: { query },
   })
 }

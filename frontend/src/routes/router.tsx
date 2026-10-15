@@ -50,6 +50,13 @@ export function createRoutes(env: Env): RouteObject[] {
                       }),
                     },
                     {
+                      path: ROUTES.knowledge.slice(1),
+                      lazy: async () => ({
+                        Component: (await import('@/features/knowledge/knowledge-page'))
+                          .KnowledgePage,
+                      }),
+                    },
+                    {
                       path: ROUTES.instagramSettings.slice(1),
                       lazy: async () => ({
                         Component: (await import('./instagram-settings-page'))

@@ -580,7 +580,10 @@ days. Two response details the UI depends on: `conversations.by_state` is the pr
 Onboarding activation (`frontend/src/api/business.ts`) saves through `PUT /business/profile`, the knowledge entry
 endpoints and `PATCH /settings/ai`; the exact request bodies it builds were replayed against the real API on
 PostgreSQL (all 200/201) and the real responses parsed with the frontend schemas. The other Phase 18 screens are not
-built yet.
+built yet except the knowledge base (`frontend/src/features/knowledge`), whose requests (kind filter, cursor paging, partial PATCH, DELETE
+answering 204, search) were replayed against the real API on PostgreSQL and their responses parsed with the frontend
+schemas. Real behaviors it relies on: lists are oldest first, a repeat DELETE is 404, a blank title is 422, and
+retrieval matches whole words only.
 
 - `GET /analytics/overview` (`ANALYTICS_VIEW`: owner, admin, manager) and `GET /usage` (`SETTINGS_MANAGE`: owner, admin;
   costs are not for every member). Both take `from`/`to` (inclusive UTC dates; default last 30 days; at most 366;

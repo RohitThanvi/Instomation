@@ -88,9 +88,9 @@ src/routes/      route components (lazy-loaded), providers, router
 | 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                           |
 | 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
 | 5. Automation rules                                                     | Next                                                                                  |
-| 6. Knowledge base                                                       | Planned                                                                               |
+| 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
 | 7. Settings / usage / admin                                             | Planned                                                                               |
-| 8. Role-aware UI (permission helper, applied per screen)                | Planned                                                                               |
+| 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base and the sidebar    |
 
 ## Known follow-ups
 
@@ -114,6 +114,13 @@ src/routes/      route components (lazy-loaded), providers, router
   3. `PATCH /settings/ai` with `dm_automation_enabled` and `comment_automation_enabled`, last.
 
   The calls, bodies and responses were checked against the real backend on PostgreSQL (see ARCHITECTURE.md).
+- **Knowledge base** (`src/features/knowledge`, route `/knowledge`, owners and admins; managers and staff get an
+  explanation and the sidebar link is hidden, while the server still enforces it). Entries load 20 at a time, oldest
+  first, with a server-side type filter. Add and edit are inline (there is no dialog component); delete is a two-step
+  confirm. Edit sends only the fields that changed and nothing when none did. A box runs the assistant's own retrieval
+  (`POST /knowledge/search`) and lists matches best first; it does not show the score, which is a ranking value that
+  means nothing to an owner, and it says that matching is by whole words. Deliberately not editable yet: an entry's
+  `attributes` (they are untouched by edits), and search over the list itself.
 - **What onboarding no longer offers.** The backend has no private-reply behavior and no handoff settings, so the
   "continue a comment in private" toggle and the three "bring in a person" toggles were removed rather than saved to
   nowhere. The automation step now states when the assistant hands over (`HANDOFF_RULES`); that list mirrors the
@@ -128,6 +135,9 @@ src/routes/      route components (lazy-loaded), providers, router
   estimated. The response was checked by parsing a genuine one captured from the backend on PostgreSQL. The vitest
   config pins `TZ=America/Los_Angeles` so a date helper that follows the viewer's clock instead of UTC fails here.
 - The `/usage` endpoint (owner/admin only) has no frontend client yet.
+- **The sidebar is hidden below the `md` breakpoint and nothing replaces it**, so on a phone no page is reachable
+  from navigation (only by URL). It predates the knowledge screen, which inherits it. A mobile nav is needed before
+  any real mobile use.
 - `GET /auth/me` has no caller now that the temporary "Signed in" card is gone (it was the only user, so the wrapper was
   removed as dead code). Re-add `fetchIdentity` when a screen needs the identity, for example the admin flag.
 - No CSP header yet: Clerk's frontend API host is instance-specific and needs to be templated into nginx.
