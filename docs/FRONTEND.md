@@ -111,7 +111,7 @@ src/routes/      route components (lazy-loaded), providers, router
      `communication_style`, notes become `custom_instructions`; blank website and notes are sent as `null`.
   2. Products and services become knowledge entries (`kind` product/service, the price and link written into the
      text the assistant reads). An entry with the same kind and name is updated, not duplicated; nothing is deleted.
-  3. `PATCH /settings/ai` with `dm_automation_enabled` and `comment_automation_enabled`, last.
+  3. `PATCH /settings/ai` with `dm_automation_enabled`, `comment_automation_enabled` and `private_reply_enabled`, last.
 
   The calls, bodies and responses were checked against the real backend on PostgreSQL (see ARCHITECTURE.md).
 - **Knowledge base** (`src/features/knowledge`, route `/knowledge`, owners and admins; managers and staff get an
@@ -121,11 +121,12 @@ src/routes/      route components (lazy-loaded), providers, router
   (`POST /knowledge/search`) and lists matches best first; it does not show the score, which is a ranking value that
   means nothing to an owner, and it says that matching is by whole words. Deliberately not editable yet: an entry's
   `attributes` (they are untouched by edits), and search over the list itself.
-- **What onboarding no longer offers.** The backend has no private-reply behavior and no handoff settings, so the
-  "continue a comment in private" toggle and the three "bring in a person" toggles were removed rather than saved to
-  nowhere. The automation step now states when the assistant hands over (`HANDOFF_RULES`); that list mirrors the
-  backend and must change with it. Previously the review screen promised handoffs on request and on complaints,
-  which the pipeline never did explicitly.
+- **Automation step.** It offers only what the backend can store: reply to comments, reply to direct messages, and
+  "Continue a comment in private" (`private_reply_enabled`; off by default like on the server). The private option is
+  shown only while comment replies are on and the server's `FEATURE_PRIVATE_REPLY` capability is enabled, and
+  `normalizeAutomation` forces it off otherwise, because a private reply answers a comment. Handoffs are not settings:
+  the screen states when the assistant hands over (`HANDOFF_RULES`, which mirrors the backend and must change with it).
+  Earlier the review screen promised handoffs on request and on complaints, which the pipeline never did explicitly.
 - Onboarding has no server-side "completed" flag, so a user with a workspace is not forced back into it; the sidebar
   keeps a "Setup guide" link.
 - The initial bundle is dominated by Clerk and React (~440 kB min, ~130 kB gzip). Recharts (~366 kB) is a separate

@@ -24,7 +24,7 @@ const SETUP: BusinessSetup = {
     ],
   },
   style: { tone: 'friendly', notes: 'Use first names.' },
-  automation: { reply_to_comments: true, reply_to_dms: false },
+  automation: { reply_to_comments: true, reply_to_dms: false, private_reply_from_comments: true },
 }
 
 const STORED_PROFILE: BusinessProfile = {
@@ -61,6 +61,7 @@ function fakeServer(options: { entries?: Entry[]; failOn?: (call: Call) => boole
     ai: {
       dm_automation_enabled: false,
       comment_automation_enabled: false,
+      private_reply_enabled: false,
       confidence_threshold: 0.7,
       max_response_tokens: 300,
       temperature: 0.3,
@@ -177,10 +178,12 @@ describe('saveBusinessSetup', () => {
     expect(calls.at(-1)?.body).toEqual({
       dm_automation_enabled: false,
       comment_automation_enabled: true,
+      private_reply_enabled: true,
     })
     expect(settings).toMatchObject({
       dm_automation_enabled: false,
       comment_automation_enabled: true,
+      private_reply_enabled: true,
     })
     expect(state.profile.location).toBe('Jaipur')
   })

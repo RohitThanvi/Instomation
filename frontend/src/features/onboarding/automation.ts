@@ -1,21 +1,29 @@
 import type { AutomationPreferences } from '@/api/business'
 import { FEATURES } from '@/api/instagram'
 
+/** Private replies start off, like on the server: the owner opts in. */
 export const DEFAULT_AUTOMATION: AutomationPreferences = {
   reply_to_comments: true,
   reply_to_dms: true,
+  private_reply_from_comments: false,
 }
 
 type IsEnabled = (feature: string) => boolean
 
-/** A reply action the server has not enabled is always stored as off, whatever the form held. */
+/**
+ * A reply action the server has not enabled is always stored as off, whatever the form held. A
+ * private reply answers a comment, so it is also off whenever comment replies are.
+ */
 export function normalizeAutomation(
   values: AutomationPreferences,
   isEnabled: IsEnabled,
 ): AutomationPreferences {
+  const comments = values.reply_to_comments && isEnabled(FEATURES.commentReply)
   return {
-    reply_to_comments: values.reply_to_comments && isEnabled(FEATURES.commentReply),
+    reply_to_comments: comments,
     reply_to_dms: values.reply_to_dms && isEnabled(FEATURES.dmReply),
+    private_reply_from_comments:
+      comments && values.private_reply_from_comments && isEnabled(FEATURES.privateReply),
   }
 }
 
@@ -40,6 +48,8 @@ export function buildCommitments(
   if (settings?.reply_to_comments)
     will.push('Reply to comments on your posts in your chosen voice.')
   if (settings?.reply_to_dms) will.push('Reply to people who message you first.')
+  if (settings?.private_reply_from_comments)
+    will.push('Send a commenter one private message when the answer needs more detail.')
   if (will.length > 0) {
     will.push('Hand a conversation to a person when it cannot answer or is not confident.')
     will.push('Hand over messages that read as threats, and aim to pass refunds and complaints on.')

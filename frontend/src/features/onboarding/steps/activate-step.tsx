@@ -48,7 +48,11 @@ export function ActivateStep({ draft }: { draft: OnboardingDraft }) {
   const hasLiveAccount = accounts.data?.some((account) => describeAccount(account).isLive) ?? false
 
   if (save.isSuccess) {
-    const { dm_automation_enabled: dms, comment_automation_enabled: comments } = save.data
+    const {
+      dm_automation_enabled: dms,
+      comment_automation_enabled: comments,
+      private_reply_enabled: privateReplies,
+    } = save.data
     return (
       <StepFrame
         title="Your assistant is set up"
@@ -57,6 +61,7 @@ export function ActivateStep({ draft }: { draft: OnboardingDraft }) {
         <ul className="text-ink space-y-1 text-sm">
           <li>Replying to direct messages: {dms ? 'on' : 'off'}</li>
           <li>Replying to comments: {comments ? 'on' : 'off'}</li>
+          <li>Private messages to commenters: {privateReplies ? 'on' : 'off'}</li>
         </ul>
         {!hasLiveAccount && (
           <Notice tone="warning" title="No Instagram account is receiving messages yet">

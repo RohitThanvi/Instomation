@@ -71,12 +71,13 @@ export const styleSchema = z.object({
 export type StyleValues = z.infer<typeof styleSchema>
 
 /**
- * Only what the backend can store: whether the assistant answers comments and DMs. There is no
- * setting for private replies (never sent) or for handoffs (always decided by the pipeline).
+ * What the backend can store: whether the assistant answers comments, DMs, and also sends a
+ * commenter one private message. Handoffs are not a setting; the pipeline always decides them.
  */
 export const automationPreferencesSchema = z.object({
   reply_to_comments: z.boolean(),
   reply_to_dms: z.boolean(),
+  private_reply_from_comments: z.boolean(),
 })
 export type AutomationPreferences = z.infer<typeof automationPreferencesSchema>
 
@@ -109,6 +110,7 @@ export type BusinessProfile = z.infer<typeof businessProfileSchema>
 export const aiSettingsSchema = z.object({
   dm_automation_enabled: z.boolean(),
   comment_automation_enabled: z.boolean(),
+  private_reply_enabled: z.boolean(),
   confidence_threshold: z.number(),
   max_response_tokens: z.number().int(),
   temperature: z.number(),
@@ -198,6 +200,7 @@ export async function saveBusinessSetup(
     body: {
       dm_automation_enabled: setup.automation.reply_to_dms,
       comment_automation_enabled: setup.automation.reply_to_comments,
+      private_reply_enabled: setup.automation.private_reply_from_comments,
     },
   })
 }

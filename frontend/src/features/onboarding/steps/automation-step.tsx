@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { StepFooter, StepFrame } from '../step-frame'
 import { DEFAULT_AUTOMATION, HANDOFF_RULES, normalizeAutomation } from '../automation'
@@ -42,6 +42,10 @@ function AutomationForm({ defaults, isEnabled, onSubmit, onBack }: FormProps) {
     },
   ] as const
   const available = replyControls.filter((control) => isEnabled(control.feature))
+  // A private reply answers a comment, so it is only offered while comment replies are on.
+  const repliesToComments = useWatch({ control: form.control, name: 'reply_to_comments' })
+  const commentRepliesOn = repliesToComments && isEnabled(FEATURES.commentReply)
+  const offerPrivateReply = commentRepliesOn && isEnabled(FEATURES.privateReply)
 
   return (
     <form onSubmit={(event) => void submit(event)} className="space-y-8">
@@ -60,6 +64,13 @@ function AutomationForm({ defaults, isEnabled, onSubmit, onBack }: FormProps) {
               registration={form.register(control.name)}
             />
           ))
+        )}
+        {offerPrivateReply && (
+          <ToggleRow
+            label="Continue a comment in private"
+            description="When a public reply is not enough, also send the commenter one private message with the details. Instagram allows one per comment, within 7 days."
+            registration={form.register('private_reply_from_comments')}
+          />
         )}
         {available.length < replyControls.length && available.length > 0 && (
           <p className="text-ink-subtle text-sm">

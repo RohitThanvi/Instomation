@@ -39,6 +39,7 @@ const PROFILE_WIRE = {
 const AI_WIRE = {
   dm_automation_enabled: true,
   comment_automation_enabled: true,
+  private_reply_enabled: false,
   confidence_threshold: 0.7,
   max_response_tokens: 300,
   temperature: 0.3,
@@ -58,6 +59,7 @@ function mountActivate(
     role?: 'owner' | 'admin' | 'manager' | 'staff'
     accounts?: unknown[]
     createEntry?: () => { status?: number; body: unknown }
+    settings?: object
   } = {},
 ) {
   if (draft !== undefined) {
@@ -83,7 +85,7 @@ function mountActivate(
         status: 201,
         body: { id: '11111111-1111-4111-8111-111111111111', ...(call.body as object) },
       })),
-    'PATCH /api/v1/settings/ai': () => ({ body: AI_WIRE }),
+    'PATCH /api/v1/settings/ai': () => ({ body: options.settings ?? AI_WIRE }),
   })
   renderWithSession(<OnboardingPage />, {
     path: '/onboarding/activate',
@@ -112,6 +114,7 @@ describe('activate step', () => {
     expect(await screen.findByText('Your assistant is set up')).toBeInTheDocument()
     expect(screen.getByText('Replying to direct messages: on')).toBeInTheDocument()
     expect(screen.getByText('Replying to comments: on')).toBeInTheDocument()
+    expect(screen.getByText('Private messages to commenters: off')).toBeInTheDocument()
     expect(writesOf(calls)).toEqual([
       'PUT /api/v1/business/profile',
       'POST /api/v1/knowledge/entries',
@@ -127,6 +130,7 @@ describe('activate step', () => {
     expect(calls.find((call) => call.method === 'PATCH')?.body).toEqual({
       dm_automation_enabled: true,
       comment_automation_enabled: true,
+      private_reply_enabled: false,
     })
     expect(screen.queryByText(/not yet available/i)).not.toBeInTheDocument()
   })
@@ -134,11 +138,41 @@ describe('activate step', () => {
   it('reports the settings the server returned, not the ones that were asked for', async () => {
     mountActivate({
       ...COMPLETE_DRAFT,
-      automation: { reply_to_comments: false, reply_to_dms: true },
+      automation: {
+        reply_to_comments: false,
+        reply_to_dms: true,
+        private_reply_from_comments: false,
+      },
     })
     await activate()
     // The fake server answers "on" for both whatever was sent; the screen must show that answer.
     expect(await screen.findByText('Replying to comments: on')).toBeInTheDocument()
+  })
+
+  it('sends the owner’s choice to switch private replies on, and shows what the server answered', async () => {
+    const { calls } = mountActivate({
+      ...COMPLETE_DRAFT,
+      automation: { ...DEFAULT_AUTOMATION, private_reply_from_comments: true },
+    })
+    await activate()
+    expect(await screen.findByText('Your assistant is set up')).toBeInTheDocument()
+    expect(calls.find((call) => call.method === 'PATCH')?.body).toMatchObject({
+      private_reply_enabled: true,
+    })
+    // The test server answers "off" regardless, and the screen reports the answer, not the request.
+    expect(screen.getByText('Private messages to commenters: off')).toBeInTheDocument()
+  })
+
+  it('reports private messages as on when the server says so', async () => {
+    mountActivate(
+      {
+        ...COMPLETE_DRAFT,
+        automation: { ...DEFAULT_AUTOMATION, private_reply_from_comments: true },
+      },
+      { settings: { ...AI_WIRE, private_reply_enabled: true } },
+    )
+    await activate()
+    expect(await screen.findByText('Private messages to commenters: on')).toBeInTheDocument()
   })
 
   it('warns, after saving, when no Instagram account is receiving messages yet', async () => {

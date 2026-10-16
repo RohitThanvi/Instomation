@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HANDOFF_RULES } from './automation'
 import { OnboardingPage } from './onboarding-page'
@@ -47,10 +48,38 @@ describe('automation step: capability gating', () => {
     expect(document.body.textContent).not.toMatch(UNSUPPORTED_WORDING)
   })
 
-  it('never offers a private reply: the server may list it, but nothing ever sends one', async () => {
-    mountAutomation(withEnabled({ FEATURE_PRIVATE_REPLY: true }))
-    expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
-    expect(screen.queryByText(/in private|private (reply|message)/i)).not.toBeInTheDocument()
+  describe('private reply', () => {
+    const PRIVATE = 'Continue a comment in private'
+
+    it('is offered, switched off by default, when the server allows it and comments are answered', async () => {
+      mountAutomation(CAPABILITIES_WIRE)
+      expect(await screen.findByText(PRIVATE)).toBeInTheDocument()
+      expect(screen.getByRole('switch', { name: new RegExp(PRIVATE) })).not.toBeChecked()
+      expect(screen.getByText(/one per comment, within 7 days/i)).toBeInTheDocument()
+    })
+
+    it('is not offered when the server has not enabled it', async () => {
+      mountAutomation(withEnabled({ FEATURE_PRIVATE_REPLY: false }))
+      expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
+      expect(screen.queryByText(PRIVATE)).not.toBeInTheDocument()
+      expect(screen.getAllByRole('switch')).toHaveLength(2)
+    })
+
+    it('is not offered when comments are not answered, since it answers a comment', async () => {
+      mountAutomation(withEnabled({ FEATURE_COMMENT_REPLY: false }))
+      expect(await screen.findByText('Reply to direct messages')).toBeInTheDocument()
+      expect(screen.queryByText(PRIVATE)).not.toBeInTheDocument()
+    })
+
+    it('goes away when the owner switches comment replies off, and returns with them', async () => {
+      mountAutomation(CAPABILITIES_WIRE)
+      expect(await screen.findByText(PRIVATE)).toBeInTheDocument()
+      const comments = screen.getByRole('switch', { name: /reply to comments/i })
+      await userEvent.click(comments)
+      expect(screen.queryByText(PRIVATE)).not.toBeInTheDocument()
+      await userEvent.click(comments)
+      expect(await screen.findByText(PRIVATE)).toBeInTheDocument()
+    })
   })
 
   it('still never renders comment-like or profile controls even if a server claims they are enabled', async () => {
@@ -62,7 +91,8 @@ describe('automation step: capability gating', () => {
       }),
     )
     expect(await screen.findByText('Reply to comments')).toBeInTheDocument()
-    expect(screen.getAllByRole('switch')).toHaveLength(2) // comments and DMs, nothing else
+    // comments, DMs and the private reply: nothing else, whatever the server claims
+    expect(screen.getAllByRole('switch')).toHaveLength(3)
     expect(document.body.textContent).not.toMatch(UNSUPPORTED_WORDING)
   })
 
