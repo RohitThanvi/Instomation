@@ -13,7 +13,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
-| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox); onboarding saves to the API on activation; knowledge base screen done (owners/admins); automation rules next |
+| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox); onboarding saves to the API on activation; knowledge base screen done (owners/admins); mobile navigation menu; automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0005`, head is `0005`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |

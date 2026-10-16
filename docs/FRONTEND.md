@@ -90,7 +90,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
 | 7. Settings / usage / admin                                             | Planned                                                                               |
-| 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base and the sidebar    |
+| 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base, sidebar and mobile menu |
 
 ## Known follow-ups
 
@@ -136,9 +136,14 @@ src/routes/      route components (lazy-loaded), providers, router
   estimated. The response was checked by parsing a genuine one captured from the backend on PostgreSQL. The vitest
   config pins `TZ=America/Los_Angeles` so a date helper that follows the viewer's clock instead of UTC fails here.
 - The `/usage` endpoint (owner/admin only) has no frontend client yet.
-- **The sidebar is hidden below the `md` breakpoint and nothing replaces it**, so on a phone no page is reachable
-  from navigation (only by URL). It predates the knowledge screen, which inherits it. A mobile nav is needed before
-  any real mobile use.
+- **Navigation on small screens.** The sidebar only exists from the `md` breakpoint (48rem) up. Below it, a menu
+  button in the header opens a modal drawer (`components/layout/mobile-nav.tsx`) with the same links: both read one
+  list (`nav-items.ts`), so role gating and the page set can never differ between them. The drawer moves focus in and
+  returns it to the button, closes on Escape, on the dimmed backdrop, on choosing a page (including the current one) and
+  on any route change, keeps Tab inside it, and stops the page behind from scrolling. Verified in jsdom and by checking
+  the built CSS (both `md:` rules sit inside `@media (width >= 48rem)`); it has not been looked at in a real browser or
+  on a phone, and there is no swipe-to-close or open/close animation. The header's brand, workspace switcher and
+  account button share one row at ~375px and have not been checked for crowding.
 - `GET /auth/me` has no caller now that the temporary "Signed in" card is gone (it was the only user, so the wrapper was
   removed as dead code). Re-add `fetchIdentity` when a screen needs the identity, for example the admin flag.
 - No CSP header yet: Clerk's frontend API host is instance-specific and needs to be templated into nginx.

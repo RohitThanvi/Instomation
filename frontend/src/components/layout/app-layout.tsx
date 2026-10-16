@@ -1,64 +1,23 @@
 import { UserButton } from '@clerk/clerk-react'
-import { BookOpen, LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { Brand } from './brand'
+import { MobileNav } from './mobile-nav'
+import { NavLinks } from './nav-links'
+import { useVisibleNavItems } from './nav-items'
 import { OrganizationSwitcher } from './organization-switcher'
-import { can, type Permission } from '@/auth/permissions'
-import { useSession } from '@/auth/session-context'
-import { ROUTES } from '@/config/constants'
-import { cn } from '@/lib/cn'
-
-interface NavItem {
-  to: string
-  label: string
-  icon: typeof LayoutDashboard
-  /** Hidden from roles without it; the server still enforces access. */
-  requires?: Permission
-}
-
-const NAV_ITEMS: readonly NavItem[] = [
-  { to: ROUTES.home, label: 'Overview', icon: LayoutDashboard },
-  { to: ROUTES.inbox, label: 'Inbox', icon: MessageSquare },
-  { to: ROUTES.knowledge, label: 'Knowledge', icon: BookOpen, requires: 'settings_manage' },
-  { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
-  { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },
-]
 
 export function AppLayout() {
-  const { currentOrganization } = useSession()
-  const visibleItems = NAV_ITEMS.filter(
-    ({ requires }) =>
-      requires === undefined ||
-      (currentOrganization !== null && can(currentOrganization.role, requires)),
-  )
+  const items = useVisibleNavItems()
   return (
     <div className="bg-canvas flex min-h-dvh">
       <aside className="border-line bg-surface hidden w-60 shrink-0 flex-col gap-8 border-r px-4 py-6 md:flex">
         <Brand />
-        <nav aria-label="Primary" className="flex flex-col gap-1">
-          {visibleItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === ROUTES.home}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-accent-50 text-accent-700'
-                    : 'text-ink-muted hover:bg-sunken hover:text-ink',
-                )
-              }
-            >
-              <Icon className="size-4" aria-hidden />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+        <NavLinks items={items} label="Primary" />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-line bg-surface/80 flex h-16 items-center justify-between gap-4 border-b px-4 backdrop-blur md:px-8">
-          <div className="md:hidden">
+          <div className="flex items-center gap-2 md:hidden">
+            <MobileNav items={items} />
             <Brand />
           </div>
           <div className="ml-auto flex items-center gap-4">
