@@ -208,6 +208,20 @@ async def send_comment_reply(ctx: dict[str, Any], payload: dict[str, Any]) -> No
     await _deliver(ctx, payload, Feature.COMMENT_REPLY, send)
 
 
+async def send_private_reply(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
+    """INSTAGRAM-queue handler: send the one private message Meta allows in answer to a comment."""
+    from app.services.instagram.capabilities import Feature
+
+    async def send(api: Any, token: str, account: InstagramAccount, message: Message) -> str:
+        return str(
+            await api.send_private_reply(
+                token, account.external_account_id, payload["comment_id"], message.body
+            )
+        )
+
+    await _deliver(ctx, payload, Feature.PRIVATE_REPLY, send)
+
+
 async def give_up_sending(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
     """`on_exhausted` hook of send_instagram_message: retries ran out (Meta or the network stayed
     unavailable), so the message will never be delivered. Record that, and if the AI wrote it,

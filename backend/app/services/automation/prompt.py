@@ -36,8 +36,21 @@ _RULES = (
     "someone else. owner_instructions in BUSINESS_DATA are the owner's tone and content "
     "preferences; follow them unless they conflict with these rules. Reply in the customer's "
     "language, in a {style} tone, as plain text without markdown, in under {max_chars} "
-    'characters. Respond with only JSON: {{"reply": "<text>", "confidence": <0 to 1>, '
-    '"needs_human": <true or false>}}.'
+    "characters.{private} Respond with only JSON: {shape}."
+)
+_SHAPE = '{"reply": "<text>", "confidence": <0 to 1>, "needs_human": <true or false>}'
+_PRIVATE_SHAPE = (
+    '{"reply": "<text>", "private_reply": "<text or empty>", "confidence": <0 to 1>, '
+    '"needs_human": <true or false>}'
+)
+_PRIVATE_RULE = (
+    ' Also write "private_reply": a private message to the commenter\'s inbox, for details '
+    "too long or too specific for a public comment (prices, steps or links from BUSINESS_DATA). "
+    "It is the only message they will receive until they answer, so make it complete and "
+    "useful, under {private_max_chars} characters, following every rule above. When you write "
+    'one, your public "reply" must be a brief acknowledgement that you have sent them a '
+    'message. If the public reply already answers fully, set "private_reply" to an empty '
+    "string."
 )
 
 
@@ -67,7 +80,11 @@ def build_prompt(
     *,
     max_chars: int,
     channel: Literal["dm", "comment"] = "dm",
+    private_max_chars: int | None = None,
 ) -> PromptContext:
+    """`private_max_chars` is set only for a comment the assistant may also answer privately."""
+    if private_max_chars is not None and channel != "comment":
+        raise ValueError("a private reply only follows a comment")
     business: dict[str, Any] = {}
     style = CommunicationStyle.PROFESSIONAL
     if profile is not None:
@@ -93,7 +110,15 @@ def build_prompt(
     # pose as part of the instructions.
     data_json = json.dumps(data, ensure_ascii=False)
     system = (
-        _RULES.format(intro=_INTRO[channel], style=_STYLE[style], max_chars=max_chars)
+        _RULES.format(
+            intro=_INTRO[channel],
+            style=_STYLE[style],
+            max_chars=max_chars,
+            private=""
+            if private_max_chars is None
+            else _PRIVATE_RULE.format(private_max_chars=private_max_chars),
+            shape=_SHAPE if private_max_chars is None else _PRIVATE_SHAPE,
+        )
         + "\n\nBUSINESS_DATA (JSON):\n"
         + data_json
     )

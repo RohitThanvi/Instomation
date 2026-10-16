@@ -49,7 +49,7 @@ class ReplyOutcome(StrEnum):
 @dataclass(frozen=True, slots=True)
 class ReplyResult:
     outcome: ReplyOutcome
-    send_job: Job | None = None
+    send_jobs: tuple[Job, ...] = ()
 
 
 class ModelReply(BaseModel, extra="forbid"):
@@ -285,4 +285,4 @@ async def generate_dm_reply(
         },
         org_id,
     )
-    return ReplyResult(ReplyOutcome.QUEUED, job)
+    return ReplyResult(ReplyOutcome.QUEUED, (job,))

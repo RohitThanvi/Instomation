@@ -26,6 +26,7 @@ from app.workers.queue import (
     process_webhook_event,
     send_comment_reply,
     send_instagram_message,
+    send_private_reply,
 )
 from app.workers.queues import QueueName
 from app.workers.runtime import tracked
@@ -43,6 +44,7 @@ HANDLERS: dict[QueueName, list[Any]] = {
     QueueName.INSTAGRAM: [
         tracked(send_instagram_message, on_exhausted=give_up_sending),
         tracked(send_comment_reply, on_exhausted=give_up_sending),
+        tracked(send_private_reply, on_exhausted=give_up_sending),
     ],
 }
 _CRON_JOBS = {

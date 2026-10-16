@@ -179,6 +179,7 @@ async def test_ai_settings_defaults_without_creating_a_row(
     assert body == {
         "dm_automation_enabled": False,
         "comment_automation_enabled": False,
+        "private_reply_enabled": False,
         "confidence_threshold": 0.7,
         "max_response_tokens": 300,
         "temperature": 0.4,
@@ -189,6 +190,20 @@ async def test_ai_settings_defaults_without_creating_a_row(
             select(func.count()).select_from(AiSettings).where(AiSettings.organization_id == org.id)
         )
     assert count == 0  # reading does not write
+
+
+async def test_private_replies_are_off_until_an_owner_turns_them_on(
+    client: httpx.AsyncClient, org: Org
+) -> None:
+    assert (await client.get(AI, headers=org.headers())).json()["private_reply_enabled"] is False
+    on = await client.patch(AI, headers=org.headers(), json={"private_reply_enabled": True})
+    assert on.status_code == 200 and on.json()["private_reply_enabled"] is True
+    # Turning it on touches nothing else, and survives an unrelated update.
+    other = await client.patch(AI, headers=org.headers(), json={"temperature": 0.2})
+    assert other.json()["private_reply_enabled"] is True
+    assert other.json()["comment_automation_enabled"] is False
+    off = await client.patch(AI, headers=org.headers(), json={"private_reply_enabled": False})
+    assert off.json()["private_reply_enabled"] is False
 
 
 async def test_ai_settings_patch_is_partial(client: httpx.AsyncClient, org: Org) -> None:

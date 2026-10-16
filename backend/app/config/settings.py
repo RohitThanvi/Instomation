@@ -102,7 +102,8 @@ class Settings(BaseSettings):
 
     # ---- Comment auto-reply ----
     # A public reply to a long-stale comment reads oddly, so older comments are left alone.
-    comment_reply_window_hours: int = Field(default=72, ge=1)
+    # Capped at 7 days: Meta rejects a private reply to a comment older than that.
+    comment_reply_window_hours: int = Field(default=72, ge=1, le=168)
     # Public replies are short on purpose; longer model output is escalated, never truncated.
     comment_reply_max_chars: int = Field(default=300, ge=50)
 

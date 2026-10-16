@@ -4,6 +4,7 @@ and never runs the job (this silently broke webhook processing once). These test
 handler names per queue, so adding, renaming or dropping a handler is a deliberate, reviewed change.
 """
 
+from app.services.automation.comment_reply import PRIVATE_SEND_FUNCTION
 from app.services.automation.comment_reply import SEND_FUNCTION as COMMENT_SEND_FUNCTION
 from app.workers.moderation import REPLY_FUNCTIONS
 from app.workers.queues import QueueName
@@ -12,7 +13,7 @@ from app.workers.settings import _CRON_JOBS, HANDLERS
 EXPECTED_HANDLERS: dict[QueueName, set[str]] = {
     QueueName.EVENTS: {"process_webhook_event"},
     QueueName.AI: {"moderate_message", "generate_dm_reply", "generate_comment_reply"},
-    QueueName.INSTAGRAM: {"send_instagram_message", "send_comment_reply"},
+    QueueName.INSTAGRAM: {"send_instagram_message", "send_comment_reply", "send_private_reply"},
 }
 EXPECTED_CRON: dict[QueueName, set[str]] = {
     QueueName.MAINTENANCE: {
@@ -64,3 +65,7 @@ def test_chained_reply_jobs_are_registered_on_the_ai_queue() -> None:
 
 def test_the_comment_send_job_is_registered_on_the_instagram_queue() -> None:
     assert COMMENT_SEND_FUNCTION in _names(QueueName.INSTAGRAM)
+
+
+def test_the_private_reply_send_job_is_registered_on_the_instagram_queue() -> None:
+    assert PRIVATE_SEND_FUNCTION in _names(QueueName.INSTAGRAM)

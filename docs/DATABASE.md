@@ -38,6 +38,8 @@ PostgreSQL is the source of truth. Models live in `backend/app/models/`, migrati
   now; vector search can be added later without changing callers).
 - Non-ASCII full-text matching (e.g. Devanagari) needs a UTF-8 database with a non-`C` ctype such as `C.UTF-8` or
   `en_US.UTF-8`; verify it when choosing a managed PostgreSQL provider.
+- `ai_settings.private_reply_enabled` (migration `0005`, `NOT NULL DEFAULT false`) lets an organization opt in to a
+  private message to commenters; existing organizations are unchanged until they turn it on.
 - `messages` is indexed by `(organization_id, created_at)` (migration `0004`) because analytics aggregates one
   organization's messages over a date range; on a very large live table build that index `CONCURRENTLY`.
 - `audit_logs` has no foreign keys on purpose: rows outlive deleted users and organizations.

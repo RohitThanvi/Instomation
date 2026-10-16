@@ -106,6 +106,7 @@ class AiSettingsUpdate(BaseModel):
 
     dm_automation_enabled: bool | None = None
     comment_automation_enabled: bool | None = None
+    private_reply_enabled: bool | None = None
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     max_response_tokens: int | None = Field(default=None, ge=50, le=1000)
     temperature: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -123,6 +124,7 @@ class AiSettingsUpdate(BaseModel):
 class AiSettingsOut(BaseModel):
     dm_automation_enabled: bool
     comment_automation_enabled: bool
+    private_reply_enabled: bool
     confidence_threshold: float
     max_response_tokens: int
     temperature: float

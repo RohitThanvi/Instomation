@@ -67,10 +67,12 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
       strict_business|professional|moderately_casual|friendly, custom_instructions<=2000 }`. GET returns the same
       shape (empty values until saved). Anything else is 422.
     - `GET|PATCH /api/v1/settings/ai` (owner/admin) -> `{ dm_automation_enabled, comment_automation_enabled,
-      confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
+      private_reply_enabled, confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
       1-100 }`. PATCH takes any subset (at least one). `dm_automation_enabled` is the master switch for AI replies to
       DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` is the independent master switch for
-      public AI replies to comments (it does not depend on the DM switch). Public replies appear in the same
+      public AI replies to comments (it does not depend on the DM switch). `private_reply_enabled` (off by default)
+      additionally lets the assistant send the commenter one private message with details; it only has an effect
+      while comment replies are on and `FEATURE_PRIVATE_REPLY` is enabled (see capabilities). Public replies appear in the same
       conversation thread as outbound `origin: ai` messages; messages carry no channel field yet, so the UI cannot
       tell a public comment reply from a DM (a comment's inbound message has an `external_message_id` starting with
       `comment:`).

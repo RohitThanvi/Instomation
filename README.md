@@ -15,7 +15,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
 | F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox); onboarding saves to the API on activation; knowledge base screen done (owners/admins); automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
-| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0004`, head is `0004`) |
+| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0005`, head is `0005`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
@@ -67,7 +67,7 @@ Every Instagram action sits behind a capability flag and an adapter interface:
 |---|---|---|
 | `FEATURE_COMMENT_REPLY` | on | Supported |
 | `FEATURE_DM_REPLY` | on | Supported (messaging window rules apply) |
-| `FEATURE_PRIVATE_REPLY` | on | Supported (comment -> DM, one per comment, time-limited) |
+| `FEATURE_PRIVATE_REPLY` | on | Supported, and opt-in per organization (`private_reply_enabled`, off by default): one private DM to a commenter next to the public reply; Meta allows one per comment, within 7 days |
 | `FEATURE_COMMENT_LIKE` | **off** | Not exposed by the official API; UI must not advertise it |
 | `FEATURE_PROFILE_BIO_UPDATE` | **off** | Not exposed |
 | `FEATURE_PROFILE_PHOTO_UPDATE` | **off** | Not exposed |
@@ -215,7 +215,7 @@ verifies membership; with exactly one membership the header may be omitted. Pagi
 | GET | `/api/v1/handoffs` | Handoff queue, longest-waiting first (cursor-paginated; `status` filter, default unresolved). STAFF sees only conversations assigned to them. |
 | GET | `/api/v1/handoffs/counts` | Counts for the queue badge; same scoping |
 | GET/PUT | `/api/v1/business/profile` | Brand profile, policies and communication style the AI answers from (requires `settings_manage`) |
-| GET/PATCH | `/api/v1/settings/ai` | DM and comment automation switches, confidence threshold, token and temperature limits, hourly reply cap (requires `settings_manage`) |
+| GET/PATCH | `/api/v1/settings/ai` | DM, comment and private-reply switches, confidence threshold, token and temperature limits, hourly reply cap (requires `settings_manage`) |
 | GET/POST | `/api/v1/knowledge/entries` | List / create knowledge entries (requires `settings_manage`; per-org cap `KNOWLEDGE_MAX_ENTRIES`) |
 | GET/PATCH/DELETE | `/api/v1/knowledge/entries/{id}` | Fetch / update / soft-delete an entry (requires `settings_manage`) |
 | POST | `/api/v1/knowledge/search` | Full-text retrieval over active entries (requires `settings_manage`) |

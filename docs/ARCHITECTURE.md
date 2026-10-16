@@ -501,6 +501,22 @@ else is chained, so blocked, escalated and unmoderated comments are never answer
 - **Delivery:** outbound `origin=ai` message + `send_comment_reply` job (same transaction, push after commit) that
   calls `reply_to_comment`; it shares `_deliver` with the DM send, so it has the same capability flag
   (`FEATURE_COMMENT_REPLY`), token handling, retry behavior and give-up escalation.
+- **Private reply (opt-in, migration `0005`).** `ai_settings.private_reply_enabled` (default off) plus the
+  `FEATURE_PRIVATE_REPLY` capability. When both are on, the one model call for a comment may also return
+  `private_reply`: details too long or specific for a public comment. The prompt (`private_max_chars`, a quarter of
+  `DM_REPLY_MAX_BYTES`) tells the model the private message is the only one the commenter will receive until they
+  answer, and that the public reply is then a brief acknowledgement. The private text is held to every DM check
+  (confidence, links only from the business's data, at most `DM_REPLY_MAX_BYTES` bytes); if the public reply or the
+  private text fails any, **neither is sent** and a person is asked, because the public reply promises a message. An
+  empty `private_reply` means public reply only. A private text the model writes while the feature is off is ignored.
+  Both texts become outbound `origin=ai` messages and two send jobs (`send_comment_reply`, `send_private_reply`) in
+  one transaction; "already answered" is still read from the public job, so a duplicate job sends neither again. Both
+  count toward the hourly AI-reply cap. `send_private_reply` shares `_deliver` and calls
+  `POST /{ig-id}/messages` with `recipient.comment_id`; if Meta refuses (comment older than 7 days, already
+  privately answered, a Live broadcast that ended) the message is `failed` and a person is asked to follow up. Meta's
+  rules, from its documentation: one message per commenter until they respond, within 7 days of the comment (during
+  the broadcast for Live), follow-ups only within 24 hours of their reply. `COMMENT_REPLY_WINDOW_HOURS` is therefore
+  capped at 168.
 - **Channel separation:** the DM generator refuses comment messages (a requeued or forged job must not DM someone who
   only commented publicly) and vice versa; both are tested.
 - Refactor in this phase: knowledge retrieval, answer gating (`escalation_reason`) and the prompt rules are shared
@@ -509,19 +525,18 @@ else is chained, so blocked, escalated and unmoderated comments are never answer
 
 ### Known gaps (Phase 14)
 
-- **No private reply** (a DM to the commenter via `send_private_reply`, allowed once per comment within 7 days). It
-  needs a product decision about when to open a DM with someone who did not message first; the Graph method and the
-  `PRIVATE_REPLY` flag exist.
+- **Private replies are unverified against Meta** (sandbox egress is blocked): the request the client builds was
+  checked against Meta's documented shape, and everything around it was tested with a fake, but no real private reply
+  has been sent. Whether the model reliably uses `private_reply` well is also unchecked against the live provider.
+- **Both messages look alike in the inbox.** With private replies on, one comment yields two consecutive outbound AI
+  messages, the public reply and the private one, and nothing marks which is which (see the channel marker gap below).
 - **Handoff is not configurable and has no explicit "asks for a person" or "complaint" detector.** A conversation goes
   to a person when moderation sees a threat or is unsure, when a reply's confidence is below `confidence_threshold`
   (the one tunable), or when the model sets `needs_human`. The prompt tells the model to do that for missing
   information, refunds, complaints, legal matters, custom quotes and order or booking changes, so those depend on
   model judgment, which has not been checked against the live provider. There is no per-organization switch for any
   of it; the onboarding screen states this instead of offering toggles.
-- **`FEATURE_PRIVATE_REPLY` defaults on although nothing sends private replies**, so the capabilities list, and the
-  dashboard's supported-actions card built from it, overstates what the product does. Recommended: default it to off
-  until the feature exists. Onboarding ignores the flag and never offers it.
-- **No channel marker on messages**, so the inbox cannot show that an AI reply was public. A `messages.channel`
+- **No channel marker on messages**, so the inbox cannot show whether an AI reply was public or private. A `messages.channel`
   column (needs a migration and a backfill from the `comment:` prefix) is the clean fix.
 - Instagram offers no endpoint to like or hide via this API, so neither is attempted (`comment_like_enabled` is not
   exposed).

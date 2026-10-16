@@ -51,6 +51,7 @@ class AiSettings(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
     confidence_threshold: Mapped[float] = mapped_column(Float, default=0.7, server_default="0.7")
     comment_automation_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     dm_automation_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
+    private_reply_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     comment_like_enabled: Mapped[bool] = mapped_column(default=False, server_default="false")
     max_replies_per_conversation_per_hour: Mapped[int] = mapped_column(
         Integer, default=10, server_default="10"

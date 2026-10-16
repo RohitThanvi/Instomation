@@ -79,12 +79,25 @@ async def test_dm_uses_bearer_header_and_never_puts_token_in_url() -> None:
     assert json.loads(request.content) == {"recipient": {"id": "555"}, "message": {"text": "Hello"}}
 
 
-async def test_private_reply_targets_comment_id() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert json.loads(request.content)["recipient"] == {"comment_id": "c-1"}
-        return httpx.Response(200, json={"message_id": "mid-2"})
+async def test_private_reply_is_the_request_meta_documents() -> None:
+    """POST <IG_ID>/messages with recipient.comment_id and the text; the id of the message comes
+    back as message_id (developers.facebook.com/docs/instagram-platform/private-replies)."""
+    seen: list[httpx.Request] = []
 
-    assert await _api(httpx.MockTransport(handler)).send_private_reply(TOKEN, "1", "c-1", "Hi")
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"recipient_id": "9", "message_id": "mid-2"})
+
+    api = _api(httpx.MockTransport(handler))
+    assert await api.send_private_reply(TOKEN, "17841", "c-1", "Details inside") == "mid-2"
+    (request,) = seen
+    assert request.method == "POST" and request.url.path.endswith("/17841/messages")
+    assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+    assert TOKEN not in str(request.url)
+    assert json.loads(request.content) == {
+        "recipient": {"comment_id": "c-1"},
+        "message": {"text": "Details inside"},
+    }
 
 
 @pytest.mark.parametrize(

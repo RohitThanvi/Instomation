@@ -30,11 +30,26 @@ from app.services.automation.dm_reply import (
 from app.services.automation.prompt import build_prompt
 from app.services.conversations.conversations import is_ai_silenced, request_human_handoff
 from app.services.conversations.messages import COMMENT_ID_PREFIX, record_message
+from app.services.instagram.capabilities import Capabilities, Feature
 from app.workers.jobs import add_job
 from app.workers.queues import QueueName
 
 PURPOSE = "comment_reply"
 SEND_FUNCTION = "send_comment_reply"
+PRIVATE_SEND_FUNCTION = "send_private_reply"
+
+
+class ModelCommentReply(ModelReply):
+    """A comment answer: the public reply, plus an optional private message when the owner has
+    allowed it. Ignored (never sent) when private replies are off, whatever the model wrote."""
+
+    private_reply: str = ""
+
+
+def _private_replies_allowed(ai_settings: AiSettings, settings: Settings) -> bool:
+    return ai_settings.private_reply_enabled and Capabilities(settings).is_enabled(
+        Feature.PRIVATE_REPLY
+    )
 
 
 async def _skip_reason(
@@ -119,11 +134,14 @@ async def generate_comment_reply(
             select(BusinessProfile).where(BusinessProfile.organization_id == org_id)
         )
     ).scalar_one_or_none()
+    private_allowed = _private_replies_allowed(ai_settings, settings)
     prompt = build_prompt(
         profile,
         await retrieve_knowledge(session, settings, org_id, message.body),
         max_chars=settings.comment_reply_max_chars,
         channel="comment",
+        # The same ceiling a DM is held to: Instagram accepts one message, at most 1000 bytes.
+        private_max_chars=settings.dm_reply_max_bytes // 4 if private_allowed else None,
     )
     completion = await gateway.complete(
         [AIMessage("system", prompt.system), AIMessage("user", message.body)],
@@ -132,7 +150,7 @@ async def generate_comment_reply(
         organization_id=str(org_id),
     )
     record_usage(session, org_id, PURPOSE, completion, conversation_id=conversation.id)
-    parsed = parse_model(completion.text, ModelReply)
+    parsed = parse_model(completion.text, ModelCommentReply)
     escalation = escalation_reason(
         parsed,
         prompt,
@@ -140,6 +158,16 @@ async def generate_comment_reply(
         max_bytes=settings.comment_reply_max_chars * 4,  # worst-case UTF-8 width
         max_chars=settings.comment_reply_max_chars,
     )
+    private_text = parsed.private_reply.strip() if parsed is not None and private_allowed else ""
+    if escalation is None and parsed is not None and private_text:
+        # The private message is held to every check a DM is. If it fails any, nothing is sent:
+        # the public reply promises a message, so a half-sent answer is worse than a handoff.
+        escalation = escalation_reason(
+            ModelReply(reply=private_text, confidence=parsed.confidence, needs_human=False),
+            prompt,
+            ai_settings,
+            max_bytes=settings.dm_reply_max_bytes,
+        )
 
     # The model call took seconds: lock the conversation and re-check before acting on it.
     await session.refresh(conversation, with_for_update=True)
@@ -164,15 +192,33 @@ async def generate_comment_reply(
     )
     assert reply is not None  # no external_message_id, so never deduplicated away
     assert message.external_message_id is not None
-    job = await add_job(
-        session,
-        QueueName.INSTAGRAM,
-        SEND_FUNCTION,
-        {
-            "message_id": str(reply.id),
-            "comment_message_id": str(message.id),
-            "comment_id": message.external_message_id.removeprefix(COMMENT_ID_PREFIX),
-        },
-        org_id,
-    )
-    return ReplyResult(ReplyOutcome.QUEUED, job)
+    comment_id = message.external_message_id.removeprefix(COMMENT_ID_PREFIX)
+
+    async def queue_send(function: str, sent: Message) -> Job:
+        return await add_job(
+            session,
+            QueueName.INSTAGRAM,
+            function,
+            {
+                "message_id": str(sent.id),
+                "comment_message_id": str(message.id),
+                "comment_id": comment_id,
+            },
+            org_id,
+        )
+
+    jobs = [await queue_send(SEND_FUNCTION, reply)]
+    if private_text:
+        private = await record_message(
+            session,
+            org_id,
+            conversation.instagram_account_id,
+            conversation,
+            direction=MessageDirection.OUTBOUND,
+            origin=MessageOrigin.AI,
+            body=private_text,
+            status=DeliveryStatus.PENDING,
+        )
+        assert private is not None  # no external_message_id, so never deduplicated away
+        jobs.append(await queue_send(PRIVATE_SEND_FUNCTION, private))
+    return ReplyResult(ReplyOutcome.QUEUED, tuple(jobs))

@@ -47,6 +47,7 @@ class FakeInstagramApi:
         self.sent: list[tuple[str, str, str]] = []
         self.fail_with: InstagramApiError | None = None
         self.replies: list[tuple[str, str]] = []
+        self.private_replies: list[tuple[str, str, str]] = []
 
     async def send_dm(self, token: str, account_id: str, recipient_id: str, text: str) -> str:
         if self.fail_with:
@@ -75,7 +76,10 @@ class FakeInstagramApi:
     async def send_private_reply(
         self, token: str, account_id: str, comment_id: str, text: str
     ) -> str:
-        raise NotImplementedError
+        if self.fail_with:
+            raise self.fail_with
+        self.private_replies.append((account_id, comment_id, text))
+        return f"private-{len(self.private_replies)}"
 
     async def reply_to_comment(self, token: str, comment_id: str, text: str) -> str:
         if self.fail_with:

@@ -44,13 +44,12 @@ async def _run_reply(
         except AIGatewayError as exc:
             await session.rollback()
             raise RetryableJobError(str(exc), retry_after=exc.retry_after) from exc
-        send = result.send_job
-        pending = (send.id, QueueName(send.queue), send.kind) if send is not None else None
+        pending = [(job.id, QueueName(job.queue), job.kind) for job in result.send_jobs]
         await session.commit()
-    if pending is not None:
+    for job_id, queue, kind in pending:
         # On failure the committed PENDING row is delivered later by requeue_stale_jobs.
         with contextlib.suppress(QueueUnavailableError):
-            await push_to_redis(ctx["redis"], pending[0], pending[1], pending[2])
+            await push_to_redis(ctx["redis"], job_id, queue, kind)
 
 
 async def generate_dm_reply(ctx: dict[str, Any], payload: dict[str, Any]) -> None:
