@@ -19,6 +19,7 @@ from app.models.enums import (
     ConversationState,
     DeliveryStatus,
     KnowledgeKind,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
     ProcessingStatus,
@@ -226,6 +227,10 @@ async def test_allowed_dm_is_answered_and_the_send_is_queued(case: Case) -> None
     (reply,) = await case.outbound()
     assert reply.origin is MessageOrigin.AI and reply.status is DeliveryStatus.PENDING
     assert reply.body == "Yes! We deliver within Jaipur in about 45 minutes."
+    inbound = [m for m in await case.messages() if m.direction is MessageDirection.INBOUND]
+    assert [m.channel for m in inbound] == [
+        MessageChannel.DM
+    ] and reply.channel is MessageChannel.DM
 
     (send,) = await case.jobs("send_instagram_message")
     assert send.queue == QueueName.INSTAGRAM.value and send.status is ProcessingStatus.PENDING

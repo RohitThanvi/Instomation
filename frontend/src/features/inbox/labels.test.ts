@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CONVERSATION_STATES,
   INTENTS,
+  MESSAGE_CHANNELS,
   PRIORITIES,
   type ConversationState,
 } from '@/api/conversations'
@@ -11,6 +12,7 @@ import {
   assigneeLabel,
   availableActions,
   canReplyIn,
+  channelCaption,
   composerAvailability,
   confidenceLabel,
   customerHandle,
@@ -130,5 +132,24 @@ describe('message metadata', () => {
     expect(deliveryNotice('failed')).toMatchObject({ label: 'Not delivered', tone: 'danger' })
     expect(deliveryNotice('suppressed')).toMatchObject({ label: 'Not sent', tone: 'warning' })
     expect(deliveryNotice('failed')?.detail).toMatch(/connection/i)
+  })
+})
+
+describe('channelCaption', () => {
+  it('names the public comment thread and the private reply, and stays quiet for direct messages and notes', () => {
+    expect(channelCaption({ channel: 'comment', direction: 'inbound' })).toBe('Public comment')
+    expect(channelCaption({ channel: 'comment', direction: 'outbound' })).toBe('Public reply')
+    expect(channelCaption({ channel: 'private_reply', direction: 'outbound' })).toBe(
+      'Private reply to a comment',
+    )
+    expect(channelCaption({ channel: 'dm', direction: 'inbound' })).toBeNull()
+    expect(channelCaption({ channel: 'dm', direction: 'outbound' })).toBeNull()
+    expect(channelCaption({ channel: null, direction: 'outbound' })).toBeNull()
+  })
+
+  it('has a decision for every channel the backend can send', () => {
+    for (const channel of MESSAGE_CHANNELS) {
+      expect(() => channelCaption({ channel, direction: 'outbound' })).not.toThrow()
+    }
   })
 })

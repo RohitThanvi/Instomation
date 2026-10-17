@@ -40,6 +40,13 @@ PostgreSQL is the source of truth. Models live in `backend/app/models/`, migrati
   `en_US.UTF-8`; verify it when choosing a managed PostgreSQL provider.
 - `ai_settings.private_reply_enabled` (migration `0005`, `NOT NULL DEFAULT false`) lets an organization opt in to a
   private message to commenters; existing organizations are unchanged until they turn it on.
+- `messages.channel` (migration `0006`, nullable, CHECK-constrained `dm` / `comment` / `private_reply`) records where a
+  message lives on Instagram: a customer's comment and our public reply to it are `comment`, a DM to a commenter is
+  `private_reply`, everything else is `dm`, and an internal note is `NULL` (it never leaves the app). Every writer of
+  `record_message` must state it (the argument has no default). The migration backfilled existing rows: inbound comments
+  from their `comment:` external id, AI replies from the send job that delivered them (`send_comment_reply`,
+  `send_private_reply`). Jobs are purged after `JOB_RETENTION_DAYS`, so an AI comment reply older than that cannot be
+  recognised and was backfilled as `dm`.
 - `messages` is indexed by `(organization_id, created_at)` (migration `0004`) because analytics aggregates one
   organization's messages over a date range; on a very large live table build that index `CONCURRENTLY`.
 - `audit_logs` has no foreign keys on purpose: rows outlive deleted users and organizations.

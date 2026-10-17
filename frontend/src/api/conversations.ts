@@ -22,6 +22,10 @@ export const MESSAGE_ORIGINS = ['customer', 'ai', 'human', 'internal_note'] as c
 export const messageOriginSchema = z.enum(MESSAGE_ORIGINS)
 export type MessageOrigin = z.infer<typeof messageOriginSchema>
 
+export const MESSAGE_CHANNELS = ['dm', 'comment', 'private_reply'] as const
+export const messageChannelSchema = z.enum(MESSAGE_CHANNELS)
+export type MessageChannel = z.infer<typeof messageChannelSchema>
+
 export const DELIVERY_STATUSES = ['received', 'pending', 'sent', 'failed', 'suppressed'] as const
 export const deliveryStatusSchema = z.enum(DELIVERY_STATUSES)
 export type DeliveryStatus = z.infer<typeof deliveryStatusSchema>
@@ -85,6 +89,8 @@ export const messageSchema = z.object({
   id: z.string().uuid(),
   direction: z.enum(MESSAGE_DIRECTIONS),
   origin: messageOriginSchema,
+  /** Where the message lives on Instagram; `null` for internal notes, which are never sent. */
+  channel: messageChannelSchema.nullable(),
   body: z.string(),
   status: deliveryStatusSchema,
   intent: intentSchema.nullable(),

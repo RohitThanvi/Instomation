@@ -117,6 +117,8 @@ export function messageWire(overrides: Record<string, unknown> = {}) {
     id: uuid(messageCounter),
     direction: 'inbound',
     origin: 'customer',
+    // Like the backend: a note has no channel, everything else defaults to a direct message.
+    channel: overrides.origin === 'internal_note' ? null : 'dm',
     body: 'Hi! How much is the starter kit?',
     status: 'received',
     intent: null,

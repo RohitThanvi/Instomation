@@ -16,6 +16,7 @@ from app.models.base import utcnow
 from app.models.enums import (
     ConversationState,
     DeliveryStatus,
+    MessageChannel,
     MessageDirection,
     ProcessingStatus,
 )
@@ -122,6 +123,10 @@ async def test_allowed_comment_gets_a_public_reply_queued_and_posted(
 ) -> None:
     comment_id, reply, send = await answered_comment(case)
     assert reply.status is DeliveryStatus.PENDING and reply.body == "Yes, within Jaipur!"
+    # The customer's comment and our public answer both belong to the public comment thread.
+    inbound = [m for m in await case.messages() if m.direction is MessageDirection.INBOUND]
+    assert [m.channel for m in inbound] == [MessageChannel.COMMENT]
+    assert reply.channel is MessageChannel.COMMENT
     assert send.queue == QueueName.INSTAGRAM.value
     assert send.payload["comment_id"] == comment_id  # Instagram's id, without our storage prefix
     queued = await case.pool.queued_jobs(queue_name=QueueName.INSTAGRAM.redis_key)

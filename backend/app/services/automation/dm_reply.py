@@ -13,6 +13,7 @@ from app.models.business import AiSettings, BusinessProfile, KnowledgeEntry
 from app.models.enums import (
     DeliveryStatus,
     HandoffReason,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
 )
@@ -268,6 +269,7 @@ async def generate_dm_reply(
         conversation,
         direction=MessageDirection.OUTBOUND,
         origin=MessageOrigin.AI,
+        channel=MessageChannel.DM,
         body=parsed.reply.strip(),
         status=DeliveryStatus.PENDING,
     )

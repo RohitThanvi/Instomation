@@ -49,6 +49,14 @@ class MessageOrigin(StrEnum):
     INTERNAL_NOTE = "internal_note"
 
 
+class MessageChannel(StrEnum):
+    """Where a message lives on Instagram. Internal notes have none: they never leave the app."""
+
+    DM = "dm"
+    COMMENT = "comment"  # a customer's public comment, or our public reply to it
+    PRIVATE_REPLY = "private_reply"  # a DM sent to a commenter, tied to their comment
+
+
 class DeliveryStatus(StrEnum):
     RECEIVED = "received"
     PENDING = "pending"

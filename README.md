@@ -13,9 +13,9 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
-| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox); onboarding saves to the API on activation; knowledge base screen done (owners/admins); mobile navigation menu; automation rules next |
+| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox that labels public comments, public replies and private replies); onboarding saves to the API on activation; knowledge base screen done (owners/admins); mobile navigation menu; automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
-| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0005`, head is `0005`) |
+| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0006`, head is `0006`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
@@ -25,7 +25,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 11 | Moderation | Done (rules + LLM safety classifier, fail-closed policy, runs on the `ai` queue before any reply; live-provider check pending, see below) |
 | 12 | Knowledge base | Done (entries CRUD + full-text retrieval API, per-org cap, tenant-scoped, audited; website/file ingestion not included) |
 | 13 | DM automation | Done (moderated DMs get a grounded AI reply or a human handoff; configurable via `/business/profile` and `/settings/ai`; failed sends and exhausted AI jobs escalate to a human; fail-closed gates; queued through the existing send job; delivery to Meta not yet verified, see ARCHITECTURE.md) |
-| 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; private replies not included; delivery to Meta not yet verified) |
+| 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; opt-in private replies to commenters; delivery to Meta not yet verified) |
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
 | 18 | Dashboard (frontend screens) | In progress: the dashboard's analytics are wired to the live API with a 7/30/90-day selector. Onboarding's activation saves the profile, products (as knowledge entries) and reply switches to the real API. Knowledge base screen is done. Not started: automation rules, business/AI settings, handoff queue, usage |

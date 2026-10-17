@@ -33,6 +33,7 @@ from app.models.enums import (
     DeliveryStatus,
     InstagramAccountStatus,
     Intent,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
     Priority,
@@ -122,6 +123,7 @@ class Message(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
     external_message_id: Mapped[str | None] = mapped_column(String(128))
     direction: Mapped[MessageDirection] = mapped_column(enum_column(MessageDirection))
     origin: Mapped[MessageOrigin] = mapped_column(enum_column(MessageOrigin))
+    channel: Mapped[MessageChannel | None] = mapped_column(enum_column(MessageChannel))
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[DeliveryStatus] = mapped_column(enum_column(DeliveryStatus), index=True)
     intent: Mapped[Intent | None] = mapped_column(enum_column(Intent))

@@ -37,6 +37,21 @@ Limit = Annotated[int, Query(ge=1, le=MAX_LIMIT)]
 AutomationManager = Annotated[TenantContext, Depends(require(Permission.AUTOMATION_MANAGE))]
 
 
+def _message_out(message: Message) -> MessageOut:
+    return MessageOut(
+        id=message.id,
+        direction=message.direction,
+        origin=message.origin,
+        channel=message.channel,
+        body=message.body,
+        status=message.status,
+        intent=message.intent,
+        ai_confidence=message.ai_confidence,
+        author_user_id=message.author_user_id,
+        created_at=message.created_at,
+    )
+
+
 def _out(conversation: Conversation, customer: Customer) -> ConversationOut:
     return ConversationOut(
         id=conversation.id,
@@ -181,20 +196,7 @@ async def list_messages(
         cursor,
         limit,
     )
-    items = [
-        MessageOut(
-            id=m.id,
-            direction=m.direction,
-            origin=m.origin,
-            body=m.body,
-            status=m.status,
-            intent=m.intent,
-            ai_confidence=m.ai_confidence,
-            author_user_id=m.author_user_id,
-            created_at=m.created_at,
-        )
-        for (m,) in rows
-    ]
+    items = [_message_out(m) for (m,) in rows]
     return Page[MessageOut](items=items, next_cursor=next_cursor)
 
 
@@ -211,17 +213,7 @@ async def send_message(
     job_queue: JobQueue = request.app.state.job_queue
     _, message = await send_human_reply(session, job_queue, tenant, conversation_id, body.body)
     assert isinstance(message, Message)
-    return MessageOut(
-        id=message.id,
-        direction=message.direction,
-        origin=message.origin,
-        body=message.body,
-        status=message.status,
-        intent=message.intent,
-        ai_confidence=message.ai_confidence,
-        author_user_id=message.author_user_id,
-        created_at=message.created_at,
-    )
+    return _message_out(message)
 
 
 @router.post(
@@ -238,19 +230,10 @@ async def add_note(
         conversation,
         direction=MessageDirection.OUTBOUND,
         origin=MessageOrigin.INTERNAL_NOTE,
+        channel=None,
         body=body.body,
         status=DeliveryStatus.SENT,
         author_user_id=tenant.user_id,
     )
     assert message is not None
-    return MessageOut(
-        id=message.id,
-        direction=message.direction,
-        origin=message.origin,
-        body=message.body,
-        status=message.status,
-        intent=message.intent,
-        ai_confidence=message.ai_confidence,
-        author_user_id=message.author_user_id,
-        created_at=message.created_at,
-    )
+    return _message_out(message)

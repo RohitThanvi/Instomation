@@ -5,6 +5,7 @@ import type {
   Customer,
   DeliveryStatus,
   Intent,
+  Message,
   Priority,
 } from '@/api/conversations'
 import type { MemberRole } from '@/api/schemas'
@@ -149,6 +150,23 @@ export function showsHandleSeparately(customer: Customer): boolean {
 export function assigneeLabel(role: MemberRole, conversation: Conversation): string {
   if (conversation.assigned_user_id === null) return 'Unassigned'
   return role === 'staff' ? 'You' : 'A team member'
+}
+
+/**
+ * Names the Instagram channel of a message when it is not a plain direct message. A comment
+ * produces up to three messages (the comment, a public reply, a private reply), so without this
+ * they would look alike in the thread.
+ */
+export function channelCaption(message: Pick<Message, 'channel' | 'direction'>): string | null {
+  switch (message.channel) {
+    case 'comment':
+      return message.direction === 'inbound' ? 'Public comment' : 'Public reply'
+    case 'private_reply':
+      return 'Private reply to a comment'
+    case 'dm':
+    case null:
+      return null
+  }
 }
 
 /** Percentage text, only for values that are valid probabilities. */

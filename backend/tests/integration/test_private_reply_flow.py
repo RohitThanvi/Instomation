@@ -15,7 +15,7 @@ from arq.connections import ArqRedis
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.enums import ConversationState, DeliveryStatus
+from app.models.enums import ConversationState, DeliveryStatus, MessageChannel
 from app.models.instagram import Conversation, Message
 from app.services.instagram.client import InstagramApiError
 from app.services.instagram.crypto import TokenCipher
@@ -97,6 +97,10 @@ async def test_a_comment_gets_a_public_reply_and_a_private_message_delivered_sep
 
     public, private = await case.outbound()
     assert (public.body, private.body) == (PUBLIC, PRIVATE)
+    assert (public.channel, private.channel) == (
+        MessageChannel.COMMENT,
+        MessageChannel.PRIVATE_REPLY,
+    )
     assert public.status is private.status is DeliveryStatus.PENDING
     (public_job,) = await case.jobs("send_comment_reply")
     (private_job,) = await case.jobs("send_private_reply")

@@ -7,6 +7,7 @@ from app.models.enums import (
     ConversationState,
     DeliveryStatus,
     Intent,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
     Priority,
@@ -40,6 +41,7 @@ class MessageOut(BaseModel):
     id: uuid.UUID
     direction: MessageDirection
     origin: MessageOrigin
+    channel: MessageChannel | None
     body: str
     status: DeliveryStatus
     intent: Intent | None

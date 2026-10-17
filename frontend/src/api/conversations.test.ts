@@ -6,6 +6,7 @@ import {
   fetchConversations,
   fetchThread,
   INTENTS,
+  MESSAGE_CHANNELS,
   messageSchema,
   sendReply,
   addNote,
@@ -80,6 +81,13 @@ describe('conversation schemas (mirror the wire exactly)', () => {
     expect(
       conversationSchema.safeParse(conversationWire({ created_at: 'yesterday' })).success,
     ).toBe(false)
+  })
+
+  it('parses every message channel, null for a note, and rejects an unknown one', () => {
+    for (const channel of [...MESSAGE_CHANNELS, null]) {
+      expect(messageSchema.safeParse(messageWire({ channel })).success).toBe(true)
+    }
+    expect(messageSchema.safeParse(messageWire({ channel: 'story_reply' })).success).toBe(false)
   })
 
   it('parses messages of every origin and delivery status', () => {

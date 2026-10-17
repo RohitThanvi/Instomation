@@ -4,7 +4,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.models.enums import DeliveryStatus, MemberRole, MessageDirection, MessageOrigin
+from app.models.enums import (
+    DeliveryStatus,
+    MemberRole,
+    MessageChannel,
+    MessageDirection,
+    MessageOrigin,
+)
 from app.models.instagram import Conversation, Customer, InstagramAccount
 from app.services.audit import record_audit
 from app.services.conversations.conversations import get_conversation_for_tenant, is_ai_silenced
@@ -42,6 +48,7 @@ async def send_human_reply(
         conversation,
         direction=MessageDirection.OUTBOUND,
         origin=MessageOrigin.HUMAN,
+        channel=MessageChannel.DM,
         body=body,
         status=DeliveryStatus.PENDING,
         author_user_id=tenant.user_id,

@@ -10,6 +10,7 @@ from app.models.business import AiSettings, BusinessProfile
 from app.models.enums import (
     DeliveryStatus,
     HandoffReason,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
 )
@@ -187,6 +188,7 @@ async def generate_comment_reply(
         conversation,
         direction=MessageDirection.OUTBOUND,
         origin=MessageOrigin.AI,
+        channel=MessageChannel.COMMENT,
         body=parsed.reply.strip(),
         status=DeliveryStatus.PENDING,
     )
@@ -216,6 +218,7 @@ async def generate_comment_reply(
             conversation,
             direction=MessageDirection.OUTBOUND,
             origin=MessageOrigin.AI,
+            channel=MessageChannel.PRIVATE_REPLY,
             body=private_text,
             status=DeliveryStatus.PENDING,
         )

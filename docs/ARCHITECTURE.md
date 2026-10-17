@@ -528,20 +528,29 @@ else is chained, so blocked, escalated and unmoderated comments are never answer
 - **Private replies are unverified against Meta** (sandbox egress is blocked): the request the client builds was
   checked against Meta's documented shape, and everything around it was tested with a fake, but no real private reply
   has been sent. Whether the model reliably uses `private_reply` well is also unchecked against the live provider.
-- **Both messages look alike in the inbox.** With private replies on, one comment yields two consecutive outbound AI
-  messages, the public reply and the private one, and nothing marks which is which (see the channel marker gap below).
 - **Handoff is not configurable and has no explicit "asks for a person" or "complaint" detector.** A conversation goes
   to a person when moderation sees a threat or is unsure, when a reply's confidence is below `confidence_threshold`
   (the one tunable), or when the model sets `needs_human`. The prompt tells the model to do that for missing
   information, refunds, complaints, legal matters, custom quotes and order or booking changes, so those depend on
   model judgment, which has not been checked against the live provider. There is no per-organization switch for any
   of it; the onboarding screen states this instead of offering toggles.
-- **No channel marker on messages**, so the inbox cannot show whether an AI reply was public or private. A `messages.channel`
-  column (needs a migration and a backfill from the `comment:` prefix) is the clean fix.
 - Instagram offers no endpoint to like or hide via this API, so neither is attempted (`comment_like_enabled` is not
   exposed).
 - Delivery to Meta is unverified for the same reason as DMs (sandbox egress); reply quality against the real model is
   unverified.
+
+### Message channel (migration `0006`)
+
+`messages.channel` (`dm`, `comment`, `private_reply`, `NULL` for internal notes) marks where each message lives, so the
+inbox can tell a customer's public comment, our public reply and our private reply apart; before it, one comment with
+private replies on showed two unlabeled AI messages. `record_message` takes `channel` as a required argument (no
+default), so a new writer cannot forget it; the inbound webhook handlers, DM reply, comment reply, private reply, human
+reply and internal note each pass theirs, and `MessageOut` exposes it. The migration backfills from the `comment:`
+external id and from the send jobs; an AI comment reply whose job was already purged cannot be recognised and reads as
+`dm` (see `docs/DATABASE.md`). Tested on real PostgreSQL: the backfill (every row kind, from a database stepped back to
+`0005`) and each writer's channel through the real handlers and API; every SQL rule and writer was mutated and caught
+(one backfill predicate was redundant, not untested, and was removed). The frontend parses a real response with its
+zod schema and shows the caption in the thread.
 
 ### Verification status
 

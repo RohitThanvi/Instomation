@@ -250,6 +250,7 @@ async def test_inbound_message_creates_customer_conversation_and_message(
         "body": "Hi there",
         "direction": "inbound",
         "origin": "customer",
+        "channel": "dm",
         "status": "received",
     }
 
@@ -409,6 +410,7 @@ async def test_manual_reply_requires_takeover_and_delivers_through_instagram_que
     assert sent.status_code == 201
     message_payload = sent.json()
     assert message_payload["status"] == "pending" and message_payload["origin"] == "human"
+    assert message_payload["channel"] == "dm"
 
     async with session_factory() as session:
         job = (
@@ -616,7 +618,7 @@ async def test_internal_note_is_recorded_but_never_queued_for_sending(
         headers=_auth(owner),
     )
     assert response.status_code == 201
-    assert response.json()["origin"] == "internal_note"
+    assert response.json()["origin"] == "internal_note" and response.json()["channel"] is None
     async with session_factory() as session:
         jobs = (
             (

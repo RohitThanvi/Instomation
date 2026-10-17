@@ -66,6 +66,8 @@ src/routes/      route components (lazy-loaded), providers, router
     is rejected, the draft is kept and the conversation is re-synced.
   - Internal notes go to `/notes`, are rendered as team-only cards, and never carry a delivery status.
   - Delivery is shown truthfully: `pending` (and polls faster), `failed` and `suppressed` each have a caption.
+  - A message's `channel` is captioned unless it is a plain direct message (`channelCaption`): "Public comment",
+    "Public reply" and "Private reply to a comment", so the up-to-three messages one comment produces are distinguishable.
   - AI confidence is shown only for AI messages and only for values within 0 to 1.
   - Assignee names are not resolvable from the browser (the member list needs `members_manage`), so only "You" (staff),
     "A team member" or "Unassigned" is shown.

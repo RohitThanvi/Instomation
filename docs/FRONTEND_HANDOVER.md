@@ -73,9 +73,9 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
       public AI replies to comments (it does not depend on the DM switch). `private_reply_enabled` (off by default)
       additionally lets the assistant send the commenter one private message with details; it only has an effect
       while comment replies are on and `FEATURE_PRIVATE_REPLY` is enabled (see capabilities). Public replies appear in the same
-      conversation thread as outbound `origin: ai` messages; messages carry no channel field yet, so the UI cannot
-      tell a public comment reply from a DM (a comment's inbound message has an `external_message_id` starting with
-      `comment:`).
+      conversation thread as outbound `origin: ai` messages. Every message carries `channel`: `dm`, `comment` (a
+      customer's public comment or our public reply to it) or `private_reply` (our DM to a commenter), and `null` for
+      an internal note; use it to label them.
     - Handoff queue (any member; staff only see conversations assigned to them, like the conversation list):
       `GET /api/v1/handoffs?status=&cursor=&limit=` lists conversations that need a person, longest-waiting first.
       Without `status` it returns unresolved ones (`open`, `assigned`); `status=resolved` is the history. Item:

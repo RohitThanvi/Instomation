@@ -51,6 +51,28 @@ describe('message thread', () => {
     expect(within(log).getByText('Team member')).toBeInTheDocument()
   })
 
+  it('tells the public comment, the public reply and the private reply apart', async () => {
+    mountConversation(
+      new FakeInbox({ state: 'ai_active' }, [
+        messageWire({ channel: 'comment', body: 'Do you ship to Delhi?' }),
+        outbound({ origin: 'ai', channel: 'comment', body: 'Yes, we do!', status: 'sent' }),
+        outbound({
+          origin: 'ai',
+          channel: 'private_reply',
+          body: 'Delivery to Delhi takes two days.',
+          status: 'sent',
+        }),
+        messageWire({ body: 'Thanks, and the price?' }),
+      ]),
+    )
+    const log = await thread()
+    expect(within(log).getByText('Public comment')).toBeInTheDocument()
+    expect(within(log).getByText('Public reply')).toBeInTheDocument()
+    expect(within(log).getByText('Private reply to a comment')).toBeInTheDocument()
+    // A direct message gets no channel caption: only the three above exist.
+    expect(within(log).queryAllByText(/^(Public|Private)/)).toHaveLength(3)
+  })
+
   it('makes internal notes unmistakably team-only and never styles them as customer messages', async () => {
     mountConversation(
       new FakeInbox({ state: 'human_active' }, [

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.core.locks import locked
 from app.models.business import AiSettings
-from app.models.enums import DeliveryStatus, MessageDirection, MessageOrigin
+from app.models.enums import DeliveryStatus, MessageChannel, MessageDirection, MessageOrigin
 from app.models.instagram import Conversation, Message, WebhookEvent
 from app.services.conversations.conversations import get_or_create_conversation, is_ai_silenced
 from app.services.conversations.customers import get_or_create_customer
@@ -121,6 +121,7 @@ async def handle_message(ctx: EventContext, event: WebhookEvent) -> None:
             conversation,
             direction=MessageDirection.INBOUND,
             origin=MessageOrigin.CUSTOMER,
+            channel=MessageChannel.DM,
             body=text,
             status=DeliveryStatus.RECEIVED,
             external_message_id=mid,
@@ -166,6 +167,7 @@ async def handle_comment(ctx: EventContext, event: WebhookEvent) -> None:
             conversation,
             direction=MessageDirection.INBOUND,
             origin=MessageOrigin.CUSTOMER,
+            channel=MessageChannel.COMMENT,
             body=text,
             status=DeliveryStatus.RECEIVED,
             external_message_id=f"{COMMENT_ID_PREFIX}{comment_id}",

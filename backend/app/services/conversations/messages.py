@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import utcnow
-from app.models.enums import DeliveryStatus, MessageDirection, MessageOrigin
+from app.models.enums import DeliveryStatus, MessageChannel, MessageDirection, MessageOrigin
 from app.models.instagram import Conversation, InstagramAccount, Message
 
 # A comment is stored as an inbound message whose external id is this prefix + Instagram's id.
@@ -21,6 +21,7 @@ async def record_message(
     *,
     direction: MessageDirection,
     origin: MessageOrigin,
+    channel: MessageChannel | None,
     body: str,
     status: DeliveryStatus,
     external_message_id: str | None = None,
@@ -36,6 +37,7 @@ async def record_message(
         "external_message_id": external_message_id,
         "direction": direction,
         "origin": origin,
+        "channel": channel,
         "body": body,
         "status": status,
         "author_user_id": author_user_id,
