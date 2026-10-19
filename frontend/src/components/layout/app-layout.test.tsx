@@ -41,9 +41,17 @@ describe('AppLayout navigation', () => {
     },
   )
 
+  it('links the handoff queue to its page', async () => {
+    mount('staff')
+    expect(await screen.findByRole('link', { name: 'Handoffs' })).toHaveAttribute(
+      'href',
+      '/handoffs',
+    )
+  })
+
   it('always offers the pages every role can use', async () => {
     mount('staff')
-    for (const name of ['Overview', 'Inbox', 'Instagram']) {
+    for (const name of ['Overview', 'Inbox', 'Handoffs', 'Instagram']) {
       expect(await screen.findByRole('link', { name })).toBeInTheDocument()
     }
   })

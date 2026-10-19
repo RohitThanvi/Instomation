@@ -13,7 +13,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
-| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox that labels public comments, public replies and private replies); onboarding saves to the API on activation; knowledge base screen done (owners/admins); mobile navigation menu; automation rules next |
+| F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox that labels public comments, public replies and private replies); onboarding saves to the API on activation; knowledge base screen done (owners/admins); handoff queue screen done (needs-attention and resolved views, live counts, links into the inbox); mobile navigation menu; automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
 | 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0006`, head is `0006`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
@@ -28,7 +28,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 14 | Comment automation | Done (moderated comments get a short grounded public reply or a human handoff; same fail-closed gates as DMs; opt-in private replies to commenters; delivery to Meta not yet verified) |
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
-| 18 | Dashboard (frontend screens) | In progress: the dashboard's analytics are wired to the live API with a 7/30/90-day selector. Onboarding's activation saves the profile, products (as knowledge entries) and reply switches to the real API. Knowledge base screen is done. Not started: automation rules, business/AI settings, handoff queue, usage |
+| 18 | Dashboard (frontend screens) | In progress: the dashboard's analytics are wired to the live API with a 7/30/90-day selector. Onboarding's activation saves the profile, products (as knowledge entries) and reply switches to the real API. Knowledge base and handoff queue screens are done. Not started: automation rules, business/AI settings, usage |
 | 19-20 | Tests, deployment | Mostly done (compose runs one worker per queue with liveness checks; `.env.example` matches the code; deployment and worker-registry regression tests; coverage gate at 94% in `pyproject.toml`; `docs/DEPLOYMENT.md`; CI staged in `docs/ci/` with migration-drift and frontend jobs; the API and every worker verified as real processes. Pending: a real container run, because the compose stack and images have never been built, and activating the staged workflows) |
 
 Update this table in the same commit that completes a phase.

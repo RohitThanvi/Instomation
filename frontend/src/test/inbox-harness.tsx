@@ -110,12 +110,12 @@ export function mountInbox({
     'GET /api/v1/instagram/capabilities': () => ({ body: capabilities }),
     ...handlers,
   })
-  renderWithSession(<InboxPage />, {
+  const { queryClient } = renderWithSession(<InboxPage />, {
     path,
     route: '/inbox/:conversationId?',
     requireOrganization: true,
   })
-  return api
+  return { ...api, queryClient }
 }
 
 /** Opens the fake inbox's conversation. */

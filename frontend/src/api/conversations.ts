@@ -56,7 +56,7 @@ export const INTENTS = [
 export const intentSchema = z.enum(INTENTS)
 export type Intent = z.infer<typeof intentSchema>
 
-const timestampSchema = z
+export const timestampSchema = z
   .string()
   .refine((value) => !Number.isNaN(Date.parse(value)), 'must be an ISO timestamp')
 

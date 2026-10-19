@@ -50,6 +50,12 @@ export function createRoutes(env: Env): RouteObject[] {
                       }),
                     },
                     {
+                      path: ROUTES.handoffs.slice(1),
+                      lazy: async () => ({
+                        Component: (await import('@/features/handoffs/handoffs-page')).HandoffsPage,
+                      }),
+                    },
+                    {
                       path: ROUTES.knowledge.slice(1),
                       lazy: async () => ({
                         Component: (await import('@/features/knowledge/knowledge-page'))

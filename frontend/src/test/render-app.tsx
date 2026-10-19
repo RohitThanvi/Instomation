@@ -18,7 +18,7 @@ export function renderWithSession(
   }: { path: string; route: string; requireOrganization?: boolean },
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <SessionProvider apiBaseUrl="https://api.test">
@@ -31,4 +31,5 @@ export function renderWithSession(
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  return { ...rendered, queryClient }
 }

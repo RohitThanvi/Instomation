@@ -2,7 +2,8 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationState } from '@/api/conversations'
-import { CONVERSATION_ID } from '@/test/fixtures'
+import { handoffKeys } from '@/features/handoffs/handoff-keys'
+import { CONVERSATION_ID, organization } from '@/test/fixtures'
 import {
   CONVERSATION_PATH,
   CONVERSATIONS_PATH,
@@ -54,6 +55,23 @@ describe('conversation actions', () => {
     expect(requestsTo(calls, 'POST', `${CONVERSATION_PATH}/takeover`)).toHaveLength(1)
     expect(requestsTo(calls, 'POST', `${CONVERSATION_PATH}/hand-back`)).toHaveLength(1)
     expect(inbox.conversation.state).toBe('ai_active')
+  })
+
+  it.each<[ConversationState, string]>([
+    ['ai_active', 'Take over'],
+    ['human_active', 'Hand back to assistant'],
+    ['human_active', 'Mark resolved'],
+  ])('refreshes the handoff queue after %s then "%s"', async (state, label) => {
+    const { queryClient } = mountConversation(new FakeInbox({ state }))
+    const queue = handoffKeys.list(organization().id, 'waiting')
+    queryClient.setQueryData(queue, { pages: [], pageParams: [] })
+    expect(queryClient.getQueryState(queue)?.isInvalidated).toBe(false)
+
+    await userEvent.click(await button(new RegExp(`^${label}$`)))
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(queue)?.isInvalidated).toBe(true)
+    })
   })
 
   it('describes the new state in words once a person has taken over', async () => {

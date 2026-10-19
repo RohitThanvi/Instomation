@@ -76,7 +76,7 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
       conversation thread as outbound `origin: ai` messages. Every message carries `channel`: `dm`, `comment` (a
       customer's public comment or our public reply to it) or `private_reply` (our DM to a commenter), and `null` for
       an internal note; use it to label them.
-    - Handoff queue (any member; staff only see conversations assigned to them, like the conversation list):
+    - Handoff queue (built: `src/api/handoffs.ts`, `src/features/handoffs`; any member; staff only see conversations assigned to them, like the conversation list):
       `GET /api/v1/handoffs?status=&cursor=&limit=` lists conversations that need a person, longest-waiting first.
       Without `status` it returns unresolved ones (`open`, `assigned`); `status=resolved` is the history. Item:
       `{ id, conversation_id, customer{id,external_user_id,username,display_name}, conversation_state,

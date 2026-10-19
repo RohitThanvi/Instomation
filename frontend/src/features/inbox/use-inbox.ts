@@ -16,6 +16,7 @@ import {
 } from '@/api/conversations'
 import { useRequiredOrganization, useSession } from '@/auth/session-context'
 import { INBOX_LIST_REFETCH_MS, THREAD_REFETCH_MS } from '@/config/constants'
+import { handoffKeys } from '@/features/handoffs/handoff-keys'
 import { inboxKeys } from './inbox-keys'
 import { threadPollInterval } from './polling'
 
@@ -80,6 +81,8 @@ export function useConversationActions(id: string) {
       queryClient.setQueryData(inboxKeys.detail(organization.id, id), updated)
     }
     void queryClient.invalidateQueries({ queryKey: inboxKeys.lists(organization.id) })
+    // Taking over, handing back and resolving all move the handoff queue.
+    void queryClient.invalidateQueries({ queryKey: handoffKeys.all(organization.id) })
   }
 
   function refreshAfterMessage() {

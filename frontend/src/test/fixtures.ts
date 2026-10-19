@@ -128,3 +128,23 @@ export function messageWire(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+let handoffCounter = 5000
+
+/** `HandoffOut` as the backend serializes it. Defaults to an open handoff on the fixture conversation. */
+export function handoffWire(overrides: Record<string, unknown> = {}) {
+  handoffCounter += 1
+  return {
+    id: uuid(handoffCounter),
+    conversation_id: CONVERSATION_ID,
+    customer: conversationWire().customer,
+    conversation_state: 'human_required',
+    conversation_priority: 'normal',
+    reason: 'customer_requested',
+    status: 'open',
+    assigned_user_id: null,
+    created_at: '2026-10-04T09:30:00.123456Z',
+    resolved_at: null,
+    ...overrides,
+  }
+}

@@ -1,4 +1,4 @@
-import { BookOpen, LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
+import { BookOpen, HandHelping, LayoutDashboard, MessageSquare, Plug, Rocket } from 'lucide-react'
 import { can, type Permission } from '@/auth/permissions'
 import { useSession } from '@/auth/session-context'
 import { ROUTES } from '@/config/constants'
@@ -14,6 +14,7 @@ export interface NavItem {
 const NAV_ITEMS: readonly NavItem[] = [
   { to: ROUTES.home, label: 'Overview', icon: LayoutDashboard },
   { to: ROUTES.inbox, label: 'Inbox', icon: MessageSquare },
+  { to: ROUTES.handoffs, label: 'Handoffs', icon: HandHelping },
   { to: ROUTES.knowledge, label: 'Knowledge', icon: BookOpen, requires: 'settings_manage' },
   { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
   { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },

@@ -27,6 +27,7 @@ src/auth/        Clerk-backed SessionProvider (API client, organizations, tenant
 src/components/  ui/ (primitives), layout/ (shell)
 src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabilities, OAuth result),
                  inbox/ (list, thread, composer, customer context, filters),
+                 handoffs/ (queue of conversations that need a person, waiting and resolved views),
                  dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
@@ -89,6 +90,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Answers are kept in the browser while filling in, then saved to the API on activation |
 | 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                           |
 | 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
+| Handoff queue (waiting and resolved views, live counts)                 | Done. Live API; polls the waiting list; inbox actions refresh it; see Known follow-ups |
 | 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
 | 7. Settings / usage / admin                                             | Planned                                                                               |
@@ -104,6 +106,12 @@ src/routes/      route components (lazy-loaded), providers, router
 - **Assignment (backend).** `assigned_user_id` is only ever set by taking a conversation over, and staff see only
   conversations assigned to them, so a staff member has no way to receive one yet. The inbox is correct for them; it is
   simply empty until an assign endpoint exists.
+- **Resolved handoffs order (backend).** `GET /handoffs` pages by `created_at` ascending like every list, which is right
+  for the waiting queue (longest-waiting first) but means the resolved history starts with the _oldest_ handoffs, so a
+  long history needs several "Load more" clicks to reach recent ones. A newest-first option for `status=resolved` would
+  fix it. The screen shows what the server returns.
+- The handoff queue has no per-handoff actions: a handoff only moves when the conversation does (takeover, hand-back,
+  resolve), so each row links into the inbox where those buttons live.
 - `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.
 
 - **Activation saves for real** (`saveBusinessSetup`, owners and admins only, matching `settings_manage`), in this
