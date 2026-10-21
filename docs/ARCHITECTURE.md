@@ -639,6 +639,32 @@ matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason
 1 escalated, 5 usage rows split 3 moderation and 2 comment replies).
 
 
+## Abuse protection and load shedding
+
+Request-level protection lives in ASGI middleware and one dependency, in this order from the outside in: request
+context (id, access log, security headers), CORS, body-size limit, per-address rate limit, then the router. CORS sits
+outside the limiters so a 413 or 429 still carries CORS headers and the browser shows the real error instead of an
+opaque CORS failure; preflights are answered by CORS and never consume the allowance. Enforcement details, defaults and
+known limits are in `docs/SECURITY.md`; operating them is in `docs/DEPLOYMENT.md`.
+
+- `app/core/body_limit.py`: pure ASGI, cuts the body off while it streams.
+- `app/core/client_ip.py`: the address to rate-limit, trusting exactly `TRUSTED_PROXY_COUNT` proxies.
+- `app/core/rate_limit.py`: the existing Redis limiter, now also used per request through one shared instance
+  (`shared_limiter`, built lazily from `app.state.redis`). `retry_after_if_limited` fails open on Redis errors.
+- `app/core/http_rate_limit.py`: the per-address middleware (probes and the webhook exempt, derived from the routers'
+  own path constants so they cannot drift).
+- `app/api/deps.py` `get_current_user`: the per-member limit, applied after the user is resolved so unauthenticated
+  requests cannot spend a member's allowance.
+- `app/db/session.py` `create_engine`: pool wait and a per-connection `statement_timeout` (API: `DB_STATEMENT_TIMEOUT_MS`;
+  worker: `JOB_TIMEOUT_SECONDS`). `app/core/errors.py` turns pool exhaustion and SQLSTATE `57014` (cancelled query) into a
+  503 `SERVICE_BUSY` with `Retry-After`; any other database error stays a 500.
+- `create_app(settings)` takes optional settings so tests can build an app with small limits.
+
+Tested on real PostgreSQL and Redis (limits, exemptions, spoofing, Redis outage, pool exhaustion, statement timeout, the
+engine limit set on every connection, API and worker startup wiring, body cap on the webhook), and every enforcement
+rule was mutated and caught. Not verified: behaviour under real concurrent load, a real reverse proxy in front, a
+transaction-mode pooler.
+
 ## Deployment (Phases 19-20)
 
 - **Bug found and fixed:** `docker-compose.yml` ran a single worker with `WORKER_QUEUE=maintenance`. A worker consumes

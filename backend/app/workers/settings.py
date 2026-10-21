@@ -58,7 +58,7 @@ _CRON_JOBS = {
 
 async def _on_startup(ctx: dict[str, Any]) -> None:
     configure_logging(_settings.log_level)
-    engine = create_engine(_settings)
+    engine = create_engine(_settings, statement_timeout_ms=_settings.job_timeout_seconds * 1000)
     ctx["settings"] = _settings
     ctx["engine"] = engine
     ctx["session_factory"] = create_session_factory(engine)

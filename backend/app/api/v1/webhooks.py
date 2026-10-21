@@ -21,9 +21,8 @@ from app.workers.queue import JobQueue
 from app.workers.queues import QueueName
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/instagram/webhooks", tags=["webhooks"])
-
-_MAX_BODY_BYTES = 2 * 1024 * 1024  # Meta payloads are small; anything larger is not legitimate.
+WEBHOOK_PREFIX = "/instagram/webhooks"
+router = APIRouter(prefix=WEBHOOK_PREFIX, tags=["webhooks"])
 
 
 @router.get("", include_in_schema=False)
@@ -52,9 +51,8 @@ async def receive(
         # Fail closed: never accept unverifiable deliveries.
         return Response(status_code=503)
 
+    # The body-size limit middleware has already refused anything oversized.
     body = await request.body()
-    if len(body) > _MAX_BODY_BYTES:
-        return Response(status_code=413)
     if not verify_signature(settings, body, request.headers.get("X-Hub-Signature-256")):
         logger.warning("webhook_signature_invalid")
         return Response(status_code=403)

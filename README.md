@@ -29,7 +29,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
 | 18 | Dashboard (frontend screens) | In progress: the dashboard's analytics are wired to the live API with a 7/30/90-day selector. Onboarding's activation saves the profile, products (as knowledge entries) and reply switches to the real API. Knowledge base and handoff queue screens are done. Not started: automation rules, business/AI settings, usage |
-| 19-20 | Tests, deployment | Mostly done (compose runs one worker per queue with liveness checks; `.env.example` matches the code; deployment and worker-registry regression tests; coverage gate at 94% in `pyproject.toml`; `docs/DEPLOYMENT.md`; CI staged in `docs/ci/` with migration-drift and frontend jobs; the API and every worker verified as real processes. Pending: a real container run, because the compose stack and images have never been built, and activating the staged workflows) |
+| 19-20 | Tests, deployment, hardening | Mostly done (request hardening: per-address and per-member rate limits, body-size cap, trusted-proxy client address, DB pool and statement timeouts with 503 load shedding, production security headers; not load-tested; compose runs one worker per queue with liveness checks; `.env.example` matches the code; deployment and worker-registry regression tests; coverage gate at 94% in `pyproject.toml`; `docs/DEPLOYMENT.md`; CI staged in `docs/ci/` with migration-drift and frontend jobs; the API and every worker verified as real processes. Pending: a real container run, because the compose stack and images have never been built, and activating the staged workflows) |
 
 Update this table in the same commit that completes a phase.
 
@@ -130,7 +130,7 @@ See `.env.example` (documented inline). Never commit real secrets.
 - `docs/ARCHITECTURE.md`: system design, data flow, concurrency, failure handling.
 - `docs/DATABASE.md`: schema conventions, tables, indexes, tenancy and idempotency rules.
 - `docs/FRONTEND.md`: frontend structure, conventions, run/test, screen status.
-- `docs/SECURITY.md`: auth, tenancy, secrets, token handling, retention on disconnect.
+- `docs/SECURITY.md`: auth, tenancy, secrets, token handling, abuse and overload protection, retention on disconnect.
 - `docs/FRONTEND_HANDOVER.md`: API contracts and conventions for building the remaining screens.
 - `docs/DEPLOYMENT.md`: process layout, environment, migrate-on-release, scaling rules, Meta webhook setup, free-tier path.
 

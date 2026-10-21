@@ -15,6 +15,14 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    # Responses are per-caller JSON: no browser or shared cache should keep them.
+    "Cache-Control": "no-store",
+}
+# Production only: the API serves JSON and no page, so it may forbid everything a page could load
+# (the development Swagger UI needs scripts and would break), and HTTPS is pinned for two years.
+_PRODUCTION_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
 }
 
 
@@ -26,8 +34,9 @@ class RequestContextMiddleware:
     are accepted only if they are short and log-safe.
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, *, production: bool) -> None:
         self.app = app
+        self.headers = _SECURITY_HEADERS | (_PRODUCTION_HEADERS if production else {})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -49,7 +58,7 @@ class RequestContextMiddleware:
                 status_code = message["status"]
                 headers = MutableHeaders(scope=message)
                 headers[REQUEST_ID_HEADER] = request_id
-                for name, value in _SECURITY_HEADERS.items():
+                for name, value in self.headers.items():
                     headers[name] = value
             await send(message)
 

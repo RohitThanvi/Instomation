@@ -6,7 +6,14 @@ from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.settings import Settings, get_settings
 from app.core.errors import AppError
+from app.core.rate_limit import (
+    WINDOW_SECONDS,
+    RateLimitRule,
+    rate_limited_error,
+    retry_after_if_limited,
+)
 from app.core.rbac import Permission, has_permission
 from app.core.security import ClerkTokenVerifier, Identity, unauthenticated
 from app.db.deps import get_session
@@ -38,8 +45,22 @@ async def get_identity(
 CurrentIdentity = Annotated[Identity, Depends(get_identity)]
 
 
-async def get_current_user(identity: CurrentIdentity, session: SessionDep) -> User:
-    return await get_or_create_user(session, identity.clerk_user_id)
+async def get_current_user(
+    request: Request,
+    identity: CurrentIdentity,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> User:
+    user = await get_or_create_user(session, identity.clerk_user_id)
+    retry_after = await retry_after_if_limited(
+        request.app.state,
+        RateLimitRule(
+            "http_user", str(user.id), settings.rate_limit_per_minute_per_user, WINDOW_SECONDS
+        ),
+    )
+    if retry_after is not None:
+        raise rate_limited_error(retry_after)
+    return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

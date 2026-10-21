@@ -25,6 +25,20 @@ class Settings(BaseSettings):
     database_url: str
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=5, ge=0)
+    # How long a request waits for a pooled connection before it is turned away with a 503, and the
+    # longest one query may run in the API (0 disables). Workers are bounded by JOB_TIMEOUT_SECONDS.
+    db_pool_timeout_seconds: float = Field(default=10.0, gt=0)
+    db_statement_timeout_ms: int = Field(default=15_000, ge=0)
+
+    # ---- Abuse protection ----
+    # Reverse proxies in front of the API that each append to X-Forwarded-For (0: the TCP peer is
+    # the client). Never set it above the real number: a client could then choose its own address.
+    trusted_proxy_count: int = Field(default=0, ge=0)
+    max_request_body_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
+    # A coarse flood guard before authentication (many members can share one office address, so it
+    # is generous), and the real per-member limit applied once the caller is known.
+    rate_limit_per_minute_per_ip: int = Field(default=600, ge=1)
+    rate_limit_per_minute_per_user: int = Field(default=120, ge=1)
     redis_url: str
 
     clerk_jwks_url: str

@@ -1,7 +1,17 @@
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import structlog
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
+from starlette.datastructures import State
+
+from app.core.errors import AppError
+
+WINDOW_SECONDS = 60
+
+logger = structlog.get_logger(__name__)
 
 # Atomically checks every rule first and consumes only if all pass, so a request denied by an
 # inner layer never inflates the counters of outer layers. Fixed windows (burst of up to 2x
@@ -59,3 +69,37 @@ class RateLimiter:
             exceeded_scope=rules[failed_index - 1].scope,
             retry_after_seconds=max(ttl_ms, 0) / 1000,
         )
+
+
+def shared_limiter(state: State) -> RateLimiter:
+    """The request-level limiter, created on first use from the app's Redis and then reused."""
+    limiter: RateLimiter | None = getattr(state, "rate_limiter", None)
+    if limiter is None:
+        limiter = state.rate_limiter = RateLimiter(state.redis)
+    return limiter
+
+
+async def retry_after_if_limited(state: State, rule: RateLimitRule) -> int | None:
+    """Consume one request against `rule`; the seconds to wait if it is exhausted, else None.
+
+    Fails open when Redis is unreachable: a cache outage must not take the whole API down with it
+    (the readiness probe still reports it), so protection pauses until Redis is back.
+    """
+    try:
+        decision = await shared_limiter(state).hit([rule])
+    except RedisError:
+        logger.warning("request_rate_limit_unavailable", scope=rule.scope)
+        return None
+    if decision.allowed:
+        return None
+    logger.warning("request_rate_limited", scope=rule.scope)
+    return max(1, math.ceil(decision.retry_after_seconds))
+
+
+def rate_limited_error(retry_after_seconds: int) -> AppError:
+    return AppError(
+        "RATE_LIMITED",
+        "Too many requests. Wait a moment and try again.",
+        429,
+        {"Retry-After": str(retry_after_seconds)},
+    )

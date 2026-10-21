@@ -6,10 +6,10 @@ from app.core.errors import register_error_handlers
 from app.core.middleware import REQUEST_ID_HEADER, RequestContextMiddleware
 
 
-def _client() -> httpx.AsyncClient:
+def _client(*, production: bool = False) -> httpx.AsyncClient:
     app = FastAPI()
     register_error_handlers(app)
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, production=production)
 
     @app.get("/ok")
     async def ok() -> dict[str, bool]:
@@ -47,3 +47,25 @@ async def test_safe_client_request_id_is_preserved() -> None:
     async with _client() as client:
         response = await client.get("/ok", headers={REQUEST_ID_HEADER: "abc-123_DEF.456"})
     assert response.headers[REQUEST_ID_HEADER] == "abc-123_DEF.456"
+
+
+async def test_responses_are_never_cached() -> None:
+    async with _client() as client:
+        ok, boom = await client.get("/ok"), await client.get("/boom")
+    assert ok.headers["cache-control"] == boom.headers["cache-control"] == "no-store"
+
+
+async def test_production_forbids_page_content_and_pins_https() -> None:
+    async with _client(production=True) as client:
+        response = await client.get("/ok")
+    assert (
+        response.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
+    )
+    assert response.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"
+
+
+async def test_development_leaves_the_docs_page_working() -> None:
+    async with _client(production=False) as client:
+        response = await client.get("/ok")
+    assert "content-security-policy" not in response.headers
+    assert "strict-transport-security" not in response.headers

@@ -61,13 +61,25 @@ not checked, so for the first launch stop the processes, migrate, then start the
 
 ## Scaling rules
 
-- **API:** stateless; add replicas freely. Rate limits and locks live in Redis, so replicas share them.
+- **API:** stateless; add replicas freely. Rate limits and locks live in Redis, so replicas share them. Inside one
+  container set `WEB_CONCURRENCY=N` (uvicorn reads it) to run N worker processes; each is a process for the connection
+  maths below. The image runs one by default; a small VM serving real traffic should run about one per CPU core.
+- **Behind a reverse proxy:** set `TRUSTED_PROXY_COUNT` to the exact number of proxies that append to
+  `X-Forwarded-For` (1 for one Caddy/nginx/load balancer). Left at 0 every client looks like the proxy and shares one
+  per-address allowance; set too high a client can spoof its address. Terminate TLS at the proxy: in production the API
+  sends HSTS and expects HTTPS in front of it.
+- **Overload:** a request that cannot get a database connection within `DB_POOL_TIMEOUT_SECONDS`, or whose query runs
+  past `DB_STATEMENT_TIMEOUT_MS`, gets a 503 with `Retry-After: 1`. The web app does not retry 429 or 503
+  automatically (so it cannot amplify an overload): polled views refresh on their next interval and other views show
+  the message with a retry button. Watch the
+  `database_pool_exhausted` and `database_statement_timeout` log events: either one repeating means the pool is too
+  small for the traffic or a query needs an index, not that the limits should simply be raised.
 - **`events`, `ai`, `instagram` workers:** scale by running more processes. Per-conversation ordering is enforced
   by a Redis lock, not by having a single worker.
 - **`maintenance`: keep at 1 replica.** It runs the cron sweepers; a second copy would run them twice.
 - **Database connections:** each process keeps its own pool. The ceiling is
-  `(DB_POOL_SIZE + DB_MAX_OVERFLOW) x number of processes`, which is `(5 + 5) x 5 = 50` with the defaults (API
-  plus four workers). Compare that with your provider's connection limit before adding replicas, and lower the
+  `(DB_POOL_SIZE + DB_MAX_OVERFLOW) x number of processes`, which is `(5 + 5) x 5 = 50` with the defaults (one API
+  process plus four workers); every extra `WEB_CONCURRENCY` process or replica adds another `5 + 5`. Compare that with your provider's connection limit before adding replicas, and lower the
   pool settings if needed.
 - **AI throughput:** `AI_RATE_LIMIT_PER_MINUTE` is shared across the whole deployment and
   `AI_RATE_LIMIT_PER_MINUTE_PER_TENANT` per organization. One DM costs two model calls (safety check, then reply).

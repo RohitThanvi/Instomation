@@ -8,9 +8,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from app.api.v1 import api_router, health
-from app.config.settings import get_settings
+from app.api.v1 import API_PREFIX, api_router, health
+from app.api.v1.health import PROBE_PATHS
+from app.api.v1.webhooks import WEBHOOK_PREFIX
+from app.config.settings import Settings, get_settings
+from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.errors import register_error_handlers
+from app.core.http_rate_limit import IpRateLimitMiddleware
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import ClerkTokenVerifier, http_jwks_fetcher
@@ -25,7 +29,7 @@ from app.workers.queue import JobQueue
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     async with AsyncExitStack() as stack:
-        engine = create_engine(settings)
+        engine = create_engine(settings, statement_timeout_ms=settings.db_statement_timeout_ms)
         stack.push_async_callback(engine.dispose)
         redis = Redis.from_url(settings.redis_url, decode_responses=True)
         stack.push_async_callback(redis.aclose)
@@ -52,8 +56,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
     configure_logging(settings.log_level)
     app = FastAPI(
         title="Instomation API",
@@ -63,13 +67,20 @@ def create_app() -> FastAPI:
         openapi_url=None if settings.is_production else "/openapi.json",
     )
     app.add_middleware(
+        IpRateLimitMiddleware,
+        limit_per_minute=settings.rate_limit_per_minute_per_ip,
+        trusted_proxy_count=settings.trusted_proxy_count,
+        exempt_prefixes=(*PROBE_PATHS, f"{API_PREFIX}{WEBHOOK_PREFIX}"),
+    )
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_body_bytes)
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Organization-ID"],
     )
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestContextMiddleware, production=settings.is_production)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(api_router)

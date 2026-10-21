@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 import pytest_asyncio
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -23,10 +24,11 @@ class FakeVerifier:
 
 @pytest_asyncio.fixture
 async def client(
-    session_factory: async_sessionmaker[AsyncSession],
+    session_factory: async_sessionmaker[AsyncSession], redis: Redis
 ) -> AsyncIterator[httpx.AsyncClient]:
     app = create_app()
     app.state.session_factory = session_factory
+    app.state.redis = redis
     app.state.token_verifier = FakeVerifier()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
