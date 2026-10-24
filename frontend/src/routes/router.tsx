@@ -56,6 +56,12 @@ export function createRoutes(env: Env): RouteObject[] {
                       }),
                     },
                     {
+                      path: ROUTES.settings.slice(1),
+                      lazy: async () => ({
+                        Component: (await import('@/features/settings/settings-page')).SettingsPage,
+                      }),
+                    },
+                    {
                       path: ROUTES.knowledge.slice(1),
                       lazy: async () => ({
                         Component: (await import('@/features/knowledge/knowledge-page'))

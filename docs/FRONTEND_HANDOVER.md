@@ -61,12 +61,12 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
       organization is at its entry cap: show the message, do not retry.
     - `GET|PATCH|DELETE /api/v1/knowledge/entries/{id}`. PATCH is partial (omit a field to keep it; null is not
       accepted; send `attributes: {}` to clear them); an empty PATCH is 422. DELETE returns 204.
-    - `GET|PUT /api/v1/business/profile` (owner/admin). PUT replaces the whole profile, so submit the full form: a
+    - `GET|PUT /api/v1/business/profile` (owner/admin; built: `src/features/settings`). PUT replaces the whole profile, so submit the full form: a
       field left out is cleared. `{ brand_name<=200, description<=2000, industry<=120, location<=200, website
       (http/https URL), contact_info{<=10 items, value<=200}, policies{<=10 items, value<=500}, communication_style:
       strict_business|professional|moderately_casual|friendly, custom_instructions<=2000 }`. GET returns the same
       shape (empty values until saved). Anything else is 422.
-    - `GET|PATCH /api/v1/settings/ai` (owner/admin) -> `{ dm_automation_enabled, comment_automation_enabled,
+    - `GET|PATCH /api/v1/settings/ai` (owner/admin; built: `src/features/settings`) -> `{ dm_automation_enabled, comment_automation_enabled,
       private_reply_enabled, confidence_threshold 0-1, max_response_tokens 50-1000, temperature 0-1, max_replies_per_conversation_per_hour
       1-100 }`. PATCH takes any subset (at least one). `dm_automation_enabled` is the master switch for AI replies to
       DMs; nothing is answered or even classified until it is on. `comment_automation_enabled` is the independent master switch for

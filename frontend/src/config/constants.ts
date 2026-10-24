@@ -30,6 +30,7 @@ export const ROUTES = {
   onboarding: '/onboarding',
   inbox: '/inbox',
   handoffs: '/handoffs',
+  settings: '/settings',
   knowledge: '/knowledge',
   instagramSettings: '/settings/instagram',
 } as const

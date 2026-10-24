@@ -9,7 +9,7 @@ import {
 } from './knowledge'
 import { API_PREFIX } from '@/config/constants'
 
-const optionalUrl = z
+export const optionalHttpUrl = z
   .string()
   .trim()
   .refine(
@@ -36,7 +36,7 @@ export const profileSchema = z.object({
     .min(1, 'Add a category, for example “Skincare” or “Fitness coaching”')
     .max(BUSINESS_LIMITS.category),
   description: z.string().trim().min(1, 'Add a short description').max(BUSINESS_LIMITS.description),
-  website: optionalUrl,
+  website: optionalHttpUrl,
 })
 export type ProfileValues = z.infer<typeof profileSchema>
 
@@ -46,7 +46,7 @@ export const productItemSchema = z.object({
   name: z.string().trim().min(1, 'Give this item a name').max(BUSINESS_LIMITS.productName),
   description: z.string().trim().max(BUSINESS_LIMITS.productDescription),
   price: z.string().trim().max(BUSINESS_LIMITS.price),
-  url: optionalUrl,
+  url: optionalHttpUrl,
 })
 export type ProductItem = z.infer<typeof productItemSchema>
 
@@ -118,8 +118,59 @@ export const aiSettingsSchema = z.object({
 })
 export type AiSettings = z.infer<typeof aiSettingsSchema>
 
+/** Limits of `BusinessProfileIn` in `backend/app/schemas/business.py`. */
+export const PROFILE_LIMITS = {
+  brandName: 200,
+  industry: 120,
+  location: 200,
+  website: 500,
+  description: 2000,
+  instructions: 2000,
+  mapKey: 50,
+  contactItems: 10,
+  contactValue: 200,
+  policyItems: 10,
+  policyValue: 500,
+} as const
+
+/** Bounds of `AiSettingsUpdate`. */
+export const AI_LIMITS = {
+  tokens: { min: 50, max: 1000 },
+  replies: { min: 1, max: 100 },
+} as const
+
+/** Any subset of the settings; the server rejects an empty one. */
+export type AiSettingsPatch = Partial<AiSettings>
+
 const profilePath = `${API_PREFIX}/business/profile`
 const aiSettingsPath = `${API_PREFIX}/settings/ai`
+
+export function fetchBusinessProfile(client: ApiClient, signal?: AbortSignal) {
+  return client.request({ path: profilePath, schema: businessProfileSchema, signal })
+}
+
+/** Replaces the whole profile: whatever is left out is cleared. */
+export function saveBusinessProfile(client: ApiClient, profile: BusinessProfile) {
+  return client.request({
+    method: 'PUT',
+    path: profilePath,
+    schema: businessProfileSchema,
+    body: profile,
+  })
+}
+
+export function fetchAiSettings(client: ApiClient, signal?: AbortSignal) {
+  return client.request({ path: aiSettingsPath, schema: aiSettingsSchema, signal })
+}
+
+export function updateAiSettings(client: ApiClient, patch: AiSettingsPatch) {
+  return client.request({
+    method: 'PATCH',
+    path: aiSettingsPath,
+    schema: aiSettingsSchema,
+    body: patch,
+  })
+}
 
 /**
  * `PUT /business/profile` replaces the whole profile, so the answers are laid over what is
@@ -185,22 +236,12 @@ export async function saveBusinessSetup(
   client: ApiClient,
   setup: BusinessSetup,
 ): Promise<AiSettings> {
-  const current = await client.request({ path: profilePath, schema: businessProfileSchema })
-  await client.request({
-    method: 'PUT',
-    path: profilePath,
-    schema: businessProfileSchema,
-    body: profileBody(current, setup),
-  })
+  const current = await fetchBusinessProfile(client)
+  await saveBusinessProfile(client, profileBody(current, setup))
   await upsertProducts(client, setup.products.items)
-  return client.request({
-    method: 'PATCH',
-    path: aiSettingsPath,
-    schema: aiSettingsSchema,
-    body: {
-      dm_automation_enabled: setup.automation.reply_to_dms,
-      comment_automation_enabled: setup.automation.reply_to_comments,
-      private_reply_enabled: setup.automation.private_reply_from_comments,
-    },
+  return updateAiSettings(client, {
+    dm_automation_enabled: setup.automation.reply_to_dms,
+    comment_automation_enabled: setup.automation.reply_to_comments,
+    private_reply_enabled: setup.automation.private_reply_from_comments,
   })
 }

@@ -4,6 +4,7 @@ import type { ReactElement } from 'react'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { RequireOrganization } from '@/auth/require-organization'
 import { SessionProvider } from '@/auth/session'
+import { ToastProvider } from '@/components/ui/toast'
 
 /**
  * Real SessionProvider + router + query cache; only `fetch` and Clerk are faked.
@@ -22,11 +23,13 @@ export function renderWithSession(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <SessionProvider apiBaseUrl="https://api.test">
-          <Routes>
-            <Route element={requireOrganization ? <RequireOrganization /> : <Outlet />}>
-              <Route path={route} element={element} />
-            </Route>
-          </Routes>
+          <ToastProvider>
+            <Routes>
+              <Route element={requireOrganization ? <RequireOrganization /> : <Outlet />}>
+                <Route path={route} element={element} />
+              </Route>
+            </Routes>
+          </ToastProvider>
         </SessionProvider>
       </MemoryRouter>
     </QueryClientProvider>,

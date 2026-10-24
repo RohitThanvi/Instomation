@@ -72,6 +72,21 @@ describe('mobile navigation', () => {
     expect(within(dialog).queryByRole('link', { name: 'Knowledge' })).not.toBeInTheDocument()
   })
 
+  it('keeps settings from staff and shows it to an owner', async () => {
+    mount('staff')
+    expect(
+      within(await openMenu()).queryByRole('link', { name: 'Settings' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows settings to an owner in the menu', async () => {
+    mount('owner')
+    expect(within(await openMenu()).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    )
+  })
+
   it('shows the knowledge base to an owner', async () => {
     mount('owner')
     const dialog = await openMenu()

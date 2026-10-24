@@ -148,3 +148,33 @@ export function handoffWire(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+/** `BusinessProfileOut` as the backend serializes it. */
+export function businessProfileWire(overrides: Record<string, unknown> = {}) {
+  return {
+    brand_name: 'Glow Studio',
+    description: 'Handmade skincare from Jaipur.',
+    industry: 'Skincare',
+    location: 'Jaipur',
+    website: 'https://glow.example',
+    contact_info: { Email: 'hi@glow.example' },
+    policies: { Returns: 'Free returns within 30 days' },
+    communication_style: 'friendly',
+    custom_instructions: 'Sign off with a flower.',
+    ...overrides,
+  }
+}
+
+/** `AiSettingsOut` as the backend serializes it. */
+export function aiSettingsWire(overrides: Record<string, unknown> = {}) {
+  return {
+    dm_automation_enabled: true,
+    comment_automation_enabled: true,
+    private_reply_enabled: false,
+    confidence_threshold: 0.7,
+    max_response_tokens: 300,
+    temperature: 0.4,
+    max_replies_per_conversation_per_hour: 10,
+    ...overrides,
+  }
+}

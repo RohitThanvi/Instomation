@@ -28,6 +28,7 @@ src/components/  ui/ (primitives), layout/ (shell)
 src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabilities, OAuth result),
                  inbox/ (list, thread, composer, customer context, filters),
                  handoffs/ (queue of conversations that need a person, waiting and resolved views),
+                 settings/ (assistant behaviour and business profile; owners and admins),
                  dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
@@ -93,7 +94,8 @@ src/routes/      route components (lazy-loaded), providers, router
 | Handoff queue (waiting and resolved views, live counts)                 | Done. Live API; polls the waiting list; inbox actions refresh it; see Known follow-ups |
 | 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
-| 7. Settings / usage / admin                                             | Planned                                                                               |
+| 7a. Settings (assistant behaviour, business profile)                    | Done. Owners/admins; live API; see Known follow-ups                                   |
+| 7b. Usage / admin                                                       | Planned                                                                               |
 | 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base, sidebar and mobile menu |
 
 ## Known follow-ups
@@ -110,6 +112,15 @@ src/routes/      route components (lazy-loaded), providers, router
   for the waiting queue (longest-waiting first) but means the resolved history starts with the _oldest_ handoffs, so a
   long history needs several "Load more" clicks to reach recent ones. A newest-first option for `status=resolved` would
   fix it. The screen shows what the server returns.
+- **Settings** (`/settings`, `settings_manage`: owners and admins; the server enforces it too). Two independent sections:
+  the assistant (reply switches, the minimum-confidence and reply-style sliders as whole percents, reply length, replies
+  per conversation per hour) and the business profile (text fields, tone, contact details and policies as editable rows).
+  The assistant form sends only what changed and never an empty update (the server answers 422); a switch the workspace
+  has not enabled is not shown and never touched; private replies are only offered while comment replies are on and are
+  turned off with them. The profile form validates with the backend's exact limits and PUTs the whole profile. Both
+  forms reset to what the server returns after a save, and both read fresh data on every visit so a stale editor cannot
+  overwrite a change made elsewhere. Known gaps: no unsaved-changes warning when navigating away, and the profile's
+  products live in the Knowledge screen, not here.
 - The handoff queue has no per-handoff actions: a handoff only moves when the conversation does (takeover, hand-back,
   resolve), so each row links into the inbox where those buttons live.
 - `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.
