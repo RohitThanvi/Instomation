@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 import yaml
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from app.config.settings import Settings
 from app.workers.queues import QueueName
@@ -104,3 +106,43 @@ def test_env_example_documents_nothing_that_is_not_a_setting() -> None:
     outside_backend |= {name for name in documented if name.startswith("VITE_")}
     unknown = sorted(documented - known - outside_backend)
     assert unknown == [], f".env.example documents unknown settings: {unknown}"
+
+
+def _location_blocks(conf: str) -> list[str]:
+    """The body of every `location { ... }` block (none of them nest in this config)."""
+    return re.findall(r"location\s[^{]*\{([^{}]*)\}", conf)
+
+
+def test_frontend_security_headers_reach_every_page_and_asset() -> None:
+    # nginx replaces the server-level add_header directives with a location's own, so one added
+    # to a location would silently strip these headers (the SPA's HTML shipped without them once).
+    conf = (ROOT / "frontend" / "nginx.conf").read_text()
+    locations = _location_blocks(conf)
+    assert locations, "expected the config to define locations"
+    assert not [body for body in locations if "add_header" in body]
+    for header in ("X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy"):
+        assert re.search(rf'^\s*add_header {header} ".+" always;', conf, re.MULTILINE), header
+
+
+def _pins(path: Path) -> dict[str, str]:
+    pins: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            name, version = line.split("==")
+            pins[canonicalize_name(name)] = version
+    return pins
+
+
+def test_the_image_installs_exactly_the_versions_the_tests_ran_on() -> None:
+    backend = ROOT / "backend"
+    assert "-r requirements.txt -c constraints.txt" in (backend / "Dockerfile").read_text()
+    pins = _pins(backend / "constraints.txt")
+    for line in (backend / "requirements.txt").read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        requirement = Requirement(line)
+        name = canonicalize_name(requirement.name)
+        assert name in pins, f"{requirement.name} is not pinned in constraints.txt"
+        assert requirement.specifier.contains(pins[name]), (
+            f"constraints.txt pins {name}=={pins[name]}, outside {requirement.specifier}"
+        )

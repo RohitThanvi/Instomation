@@ -59,6 +59,27 @@ Every schema change ships an Alembic migration. Migration `0004` adds an index o
 table build it `CONCURRENTLY` (see `docs/DATABASE.md`). Whether old code keeps working against a freshly migrated schema is
 not checked, so for the first launch stop the processes, migrate, then start them.
 
+## Reproducible builds
+
+`backend/requirements.txt` holds the allowed version ranges; `backend/constraints.txt` holds the exact resolved set
+(transitive dependencies included), and the image installs with `pip install -r requirements.txt -c constraints.txt`.
+Without it a build would pick up whatever is newest that day, which is not what the tests ran on: the first runtime-only
+install here resolved FastAPI 0.162 and Starlette 1.10 while the test environment had 0.143 and 1.8. The full gate
+(ruff, mypy, migrations, 524 tests) was re-run on the pinned set before it was committed, and a test fails if the
+Dockerfile stops using the constraints or a requirement is missing from, or outside the range of, `constraints.txt`.
+Use the same flag locally and in CI. To upgrade, install `requirements.txt` into a clean venv, replace the pins with
+`pip freeze`, and run the whole gate on the new versions before merging.
+
+## Frontend web server
+
+The frontend image serves the built files with nginx (`frontend/nginx.conf`): hashed assets are cached for a year,
+`index.html` is always revalidated, unknown paths fall back to the app, and `/healthz` is the container health check.
+The security headers (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`) are set once at server level, and a test
+fails if any `location` adds its own `add_header`, because nginx would then drop them for that location (the app's HTML
+shipped without them until this was caught by running the real config). No Content-Security-Policy is set for the app:
+a correct one depends on the exact Clerk domains for your instance, so add it once you have them rather than
+guessing.
+
 ## Scaling rules
 
 - **API:** stateless; add replicas freely. Rate limits and locks live in Redis, so replicas share them. Inside one
@@ -145,6 +166,14 @@ Verified in a development sandbox (no Docker): migrations from an empty PostgreS
 `/health`, `/ready` and every worker's `--check` passing; a genuinely HMAC-signed webhook accepted, stored and
 marked done by the events worker, a replay creating no second row, and tampered, unsigned and wrong-token requests
 rejected with 403.
+
+A later run used a venv built from `requirements.txt` alone (what the image installs), the API in production mode
+(`APP_ENV=production`, docs hidden, HSTS and CSP sent), all four workers, and a local key server so that real RS256
+tokens went through the real verifier: 36 checks passed, covering 401s, CORS (allowed and refused origins), a first-user
+journey (create an organization; read and write settings, profile and knowledge; analytics, usage, handoffs,
+conversations, Instagram capabilities and accounts; OAuth start), tenant isolation between two users, the signed
+webhook through to the events worker, and each worker's health check, with no error lines in any log. The built
+frontend was served through the real `nginx.conf` with nginx 1.24 (SPA fallback, `/healthz`, headers, caching).
 
 **Not verified:** the compose stack and both images were never built or run; delivery to Meta's Graph API (the
 sandbox cannot reach it); model quality against the real Groq API; behaviour on any managed PostgreSQL or Redis

@@ -111,7 +111,7 @@ The compose stack and its images have never been built or run (there was no Dock
 sandbox); treat them as unverified until you have run them. Without Docker, run the processes directly:
 
 ```bash
-cd backend && pip install -r requirements-dev.txt && alembic upgrade head
+cd backend && pip install -r requirements-dev.txt -c constraints.txt && alembic upgrade head
 uvicorn app.main:app --reload                                       # API
 WORKER_QUEUE=events arq app.workers.settings.WorkerSettings         # repeat for ai, instagram, maintenance
 
