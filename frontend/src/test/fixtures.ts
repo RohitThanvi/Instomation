@@ -178,3 +178,66 @@ export function aiSettingsWire(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+/** `UsageReport` as the backend serializes it: costs are fixed-point strings, days are zero-filled. */
+export function usageReportWire(overrides: Record<string, unknown> = {}) {
+  return {
+    range: { start: '2026-10-01', end: '2026-10-03' },
+    totals: {
+      requests: 1240,
+      input_tokens: 812_345,
+      output_tokens: 98_765,
+      estimated_cost: '1.234500',
+    },
+    failed_requests: 3,
+    unpriced_requests: 0,
+    average_latency_ms: 842,
+    by_purpose: [
+      {
+        purpose: 'dm_reply',
+        requests: 900,
+        input_tokens: 600_000,
+        output_tokens: 80_000,
+        estimated_cost: '1.000000',
+      },
+      {
+        purpose: 'comment_reply',
+        requests: 240,
+        input_tokens: 150_000,
+        output_tokens: 15_000,
+        estimated_cost: '0.200000',
+      },
+      {
+        purpose: 'moderation',
+        requests: 100,
+        input_tokens: 62_345,
+        output_tokens: 3_765,
+        estimated_cost: '0.034500',
+      },
+    ],
+    by_model: [
+      {
+        provider: 'groq',
+        model: 'llama-3.3-70b-versatile',
+        requests: 1100,
+        input_tokens: 700_000,
+        output_tokens: 90_000,
+        estimated_cost: '1.100000',
+      },
+      {
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        requests: 140,
+        input_tokens: 112_345,
+        output_tokens: 8_765,
+        estimated_cost: '0.134500',
+      },
+    ],
+    daily: [
+      { date: '2026-10-01', requests: 400, estimated_cost: '0.400000' },
+      { date: '2026-10-02', requests: 0, estimated_cost: '0' },
+      { date: '2026-10-03', requests: 840, estimated_cost: '0.834500' },
+    ],
+    ...overrides,
+  }
+}

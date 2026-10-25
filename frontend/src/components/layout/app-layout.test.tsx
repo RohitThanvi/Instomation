@@ -24,6 +24,17 @@ describe('AppLayout navigation', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each(['owner', 'admin'] as const)('offers usage to an %s', async (role) => {
+    mount(role)
+    expect(await screen.findByRole('link', { name: 'Usage' })).toHaveAttribute('href', '/usage')
+  })
+
+  it.each(['manager', 'staff'] as const)('keeps usage from a %s', async (role) => {
+    mount(role)
+    expect(await screen.findByRole('link', { name: 'Inbox' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Usage' })).not.toBeInTheDocument()
+  })
+
   it.each(['owner', 'admin'] as const)('offers settings to an %s', async (role) => {
     mount(role)
     expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute(

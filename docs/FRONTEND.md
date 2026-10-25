@@ -29,6 +29,7 @@ src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabi
                  inbox/ (list, thread, composer, customer context, filters),
                  handoffs/ (queue of conversations that need a person, waiting and resolved views),
                  settings/ (assistant behaviour and business profile; owners and admins),
+                 usage/ (AI requests and estimated cost by day, purpose and model; owners and admins),
                  dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
@@ -95,7 +96,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | 5. Automation rules                                                     | Next                                                                                  |
 | 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
 | 7a. Settings (assistant behaviour, business profile)                    | Done. Owners/admins; live API; see Known follow-ups                                   |
-| 7b. Usage / admin                                                       | Planned                                                                               |
+| 7b. Usage (AI requests and estimated cost)                              | Done. Owners/admins; live API; see Known follow-ups                                                                               |
 | 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base, sidebar and mobile menu |
 
 ## Known follow-ups
@@ -112,6 +113,16 @@ src/routes/      route components (lazy-loaded), providers, router
   for the waiting queue (longest-waiting first) but means the resolved history starts with the _oldest_ handoffs, so a
   long history needs several "Load more" clicks to reach recent ones. A newest-first option for `status=resolved` would
   fix it. The screen shows what the server returns.
+- **Usage** (`/usage`, `settings_manage`: owners and admins; managers get 403 from the server). Period selector (7, 30
+  or 90 UTC days, the same as the dashboard), summary cards (estimated cost, requests with failures, tokens, average
+  response time), requests per day (recharts, lazy-loaded, with an accessible table that adds each day's cost) and
+  tables by purpose and by model. Costs are decimal strings end to end: the schema accepts only plain fixed-point text,
+  and `formatUsd` formats the string itself (Intl decimal-string formatting, exact half-up rounding, no float), showing
+  up to four decimals below a dollar and "<$0.0001" for a non-zero amount too small to show. When `unpriced_requests`
+  is above zero a warning says the cost is understated instead of showing a confident total. `purpose` is free text on
+  the wire, so an unfamiliar one is shown readably, not rejected. Known gaps: the average response time includes failed
+  requests (the backend averages every recorded request), the chart plots requests rather than cost, and there is no
+  plan limit or budget comparison (the backend has none).
 - **Settings** (`/settings`, `settings_manage`: owners and admins; the server enforces it too). Two independent sections:
   the assistant (reply switches, the minimum-confidence and reply-style sliders as whole percents, reply length, replies
   per conversation per hour) and the business profile (text fields, tone, contact details and policies as editable rows).

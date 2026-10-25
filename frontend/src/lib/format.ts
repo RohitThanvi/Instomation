@@ -49,3 +49,24 @@ export function formatMessageTime(iso: string, locale?: string, timeZone?: strin
     ...(timeZone === undefined ? {} : { timeZone }),
   }).format(new Date(iso))
 }
+
+/**
+ * A US-dollar amount from the plain decimal string the API sends (for example "0.000432"),
+ * formatted from the string itself so no precision is lost to a float. Whole dollars and up show
+ * cents; smaller amounts show up to four decimals so a fraction of a cent is not displayed as
+ * zero, and an amount too small even for that reads "<$0.0001".
+ */
+export function formatUsd(amount: string, locale?: string): string {
+  if (!/^\d+(\.\d+)?$/.test(amount)) throw new RangeError(`Not a decimal amount: ${amount}`)
+  const money = (value: string, maximumFractionDigits: number) =>
+    new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits,
+    }).format(value)
+  const dollars = /^0*[1-9]/.test(amount)
+  const formatted = money(amount, dollars ? 2 : 4)
+  const nonzero = /[1-9]/.test(amount)
+  return nonzero && !/[1-9]/.test(formatted) ? `<${money('0.0001', 4)}` : formatted
+}

@@ -94,7 +94,7 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
       automation{ai_replies_sent, handoffs_opened, handoffs_resolved, handoffs_by_reason{...}} (every reason present,
       zero when none), moderation{allowed, blocked, escalated, blocked_by_category{spam|sexual|offensive: n}},
       daily[{date, inbound, outbound}] }` (one entry per day in the range, zero-filled, ready to chart).
-    - Usage and cost (owner/admin only; managers and staff get 403). `GET /api/v1/usage?from=&to=` ->
+    - Usage and cost (built: `src/features/usage`; owner/admin only; managers and staff get 403). `GET /api/v1/usage?from=&to=` ->
       `{ range, totals{requests, input_tokens, output_tokens, estimated_cost}, failed_requests, unpriced_requests,
       average_latency_ms|null, by_purpose[{purpose, ..., estimated_cost}] (costliest first), by_model[{provider, model,
       ...}], daily[{date, requests, estimated_cost}] }`. `estimated_cost` is a decimal **string** in USD (do not

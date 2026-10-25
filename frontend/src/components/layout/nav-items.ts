@@ -6,6 +6,7 @@ import {
   Plug,
   Rocket,
   Settings,
+  Gauge,
 } from 'lucide-react'
 import { can, type Permission } from '@/auth/permissions'
 import { useSession } from '@/auth/session-context'
@@ -24,6 +25,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: ROUTES.inbox, label: 'Inbox', icon: MessageSquare },
   { to: ROUTES.handoffs, label: 'Handoffs', icon: HandHelping },
   { to: ROUTES.knowledge, label: 'Knowledge', icon: BookOpen, requires: 'settings_manage' },
+  { to: ROUTES.usage, label: 'Usage', icon: Gauge, requires: 'settings_manage' },
   { to: ROUTES.settings, label: 'Settings', icon: Settings, requires: 'settings_manage' },
   { to: ROUTES.instagramSettings, label: 'Instagram', icon: Plug },
   { to: `${ROUTES.onboarding}/welcome`, label: 'Setup guide', icon: Rocket },
