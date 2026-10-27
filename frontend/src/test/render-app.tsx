@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 import { RequireOrganization } from '@/auth/require-organization'
 import { SessionProvider } from '@/auth/session'
 import { ToastProvider } from '@/components/ui/toast'
@@ -19,20 +19,31 @@ export function renderWithSession(
   }: { path: string; route: string; requireOrganization?: boolean },
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const rendered = render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <SessionProvider apiBaseUrl="https://api.test">
-          <ToastProvider>
-            <Routes>
-              <Route element={requireOrganization ? <RequireOrganization /> : <Outlet />}>
-                <Route path={route} element={element} />
-              </Route>
-            </Routes>
-          </ToastProvider>
-        </SessionProvider>
-      </MemoryRouter>
-    </QueryClientProvider>,
+  // A data router, like the app's, so pages can use features such as navigation blockers.
+  const router = createMemoryRouter(
+    [
+      {
+        element: (
+          <QueryClientProvider client={queryClient}>
+            <SessionProvider apiBaseUrl="https://api.test">
+              <ToastProvider>
+                <Outlet />
+              </ToastProvider>
+            </SessionProvider>
+          </QueryClientProvider>
+        ),
+        children: [
+          {
+            element: requireOrganization ? <RequireOrganization /> : <Outlet />,
+            children: [{ path: route, element }],
+          },
+          // Somewhere to navigate to, so a test can leave the page under test.
+          { path: '*', element: <p>Elsewhere</p> },
+        ],
+      },
+    ],
+    { initialEntries: [path] },
   )
-  return { ...rendered, queryClient }
+  const rendered = render(<RouterProvider router={router} />)
+  return { ...rendered, queryClient, router }
 }

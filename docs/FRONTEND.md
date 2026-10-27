@@ -130,8 +130,9 @@ src/routes/      route components (lazy-loaded), providers, router
   has not enabled is not shown and never touched; private replies are only offered while comment replies are on and are
   turned off with them. The profile form validates with the backend's exact limits and PUTs the whole profile. Both
   forms reset to what the server returns after a save, and both read fresh data on every visit so a stale editor cannot
-  overwrite a change made elsewhere. Known gaps: no unsaved-changes warning when navigating away, and the profile's
-  products live in the Knowledge screen, not here.
+  overwrite a change made elsewhere. Leaving the page with unsaved edits (in either form, including a value that is not valid yet) asks first
+  ("Keep editing" / "Leave without saving", via a router blocker), and closing or reloading the tab uses the browser's
+  own warning; saving clears it. Known gap: the profile's products live in the Knowledge screen, not here.
 - The handoff queue has no per-handoff actions: a handoff only moves when the conversation does (takeover, hand-back,
   resolve), so each row links into the inbox where those buttons live.
 - `GET /conversations/{id}` marks the conversation read as a side effect; the UI refreshes the list after opening one.

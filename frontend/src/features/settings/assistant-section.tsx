@@ -13,10 +13,11 @@ import { useCapabilities } from '@/features/instagram/use-instagram'
 import { errorMessage } from '@/api/errors'
 import { aiPatch, aiToForm, validateAi, type AiForm, type Offered } from './ai-form'
 import { useAiSettings, useSaveAiSettings } from './use-settings'
+import { useReportDirty, type DirtyReporter } from './use-report-dirty'
 
 const percent = (value: number) => `${String(value)}%`
 
-export function AssistantSection() {
+export function AssistantSection({ onDirtyChange }: { onDirtyChange: DirtyReporter }) {
   const settings = useAiSettings()
   const capabilities = useCapabilities()
   let body
@@ -45,6 +46,7 @@ export function AssistantSection() {
         key={JSON.stringify(settings.data)}
         settings={settings.data}
         offered={offered}
+        onDirtyChange={onDirtyChange}
       />
     )
   }
@@ -63,7 +65,15 @@ export function AssistantSection() {
   )
 }
 
-function AssistantForm({ settings, offered }: { settings: AiSettings; offered: Offered }) {
+function AssistantForm({
+  settings,
+  offered,
+  onDirtyChange,
+}: {
+  settings: AiSettings
+  offered: Offered
+  onDirtyChange: DirtyReporter
+}) {
   const [values, setValues] = useState<AiForm>(() => aiToForm(settings))
   const save = useSaveAiSettings()
   const set = (change: Partial<AiForm>) => {
@@ -74,6 +84,8 @@ function AssistantForm({ settings, offered }: { settings: AiSettings; offered: O
   const valid = Object.keys(errors).length === 0
   const patch = valid ? aiPatch(settings, values, offered) : {}
   const changed = Object.keys(patch).length > 0
+  // An edit that cannot be saved yet (a value out of range) is still an edit that would be lost.
+  useReportDirty(!valid || changed, onDirtyChange)
   // A private reply answers a comment, so it is only offered while comment replies are on.
   const offerPrivateReply = offered.privateReply && values.comments
 

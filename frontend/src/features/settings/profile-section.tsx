@@ -18,8 +18,9 @@ import {
   type ProfileForm,
 } from './profile-form'
 import { useBusinessProfile, useSaveProfile } from './use-settings'
+import { useReportDirty, type DirtyReporter } from './use-report-dirty'
 
-export function ProfileSection() {
+export function ProfileSection({ onDirtyChange }: { onDirtyChange: DirtyReporter }) {
   const profile = useBusinessProfile()
   let body
   if (profile.isPending) {
@@ -34,7 +35,13 @@ export function ProfileSection() {
     )
   } else {
     // Remounting on the saved profile resets the form to what the server now holds.
-    body = <ProfileEditor key={JSON.stringify(profile.data)} profile={profile.data} />
+    body = (
+      <ProfileEditor
+        key={JSON.stringify(profile.data)}
+        profile={profile.data}
+        onDirtyChange={onDirtyChange}
+      />
+    )
   }
   return (
     <section aria-labelledby="profile-heading">
@@ -53,7 +60,13 @@ export function ProfileSection() {
 
 const NO_ERRORS: ProfileErrors = { fields: {}, contact: {}, policies: {} }
 
-function ProfileEditor({ profile }: { profile: BusinessProfile }) {
+function ProfileEditor({
+  profile,
+  onDirtyChange,
+}: {
+  profile: BusinessProfile
+  onDirtyChange: DirtyReporter
+}) {
   const [values, setValues] = useState<ProfileForm>(() => profileToForm(profile))
   const [errors, setErrors] = useState<ProfileErrors>(NO_ERRORS)
   const save = useSaveProfile()
@@ -65,6 +78,7 @@ function ProfileEditor({ profile }: { profile: BusinessProfile }) {
   const result = validateProfile(values)
   // A form that cannot be read yet counts as changed, so Save stays available to show why.
   const changed = !result.ok || !sameProfile(profile, result.profile)
+  useReportDirty(changed, onDirtyChange)
 
   return (
     <form

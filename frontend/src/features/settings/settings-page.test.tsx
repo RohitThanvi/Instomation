@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { SettingsPage } from './settings-page'
@@ -49,12 +49,12 @@ function mount({
     },
     ...handlers,
   })
-  renderWithSession(<SettingsPage />, {
+  const { router } = renderWithSession(<SettingsPage />, {
     path: '/settings',
     route: '/settings',
     requireOrganization: true,
   })
-  return { ...api, state }
+  return { ...api, state, router }
 }
 
 const calls = (all: ReturnType<typeof mount>['calls'], method: string, path: string) =>
@@ -461,5 +461,87 @@ describe('business profile', () => {
     })
     expect(await screen.findByText('We could not load your business profile')).toBeInTheDocument()
     expect(await screen.findByRole('switch', { name: /Reply to comments/ })).toBeInTheDocument()
+  })
+})
+
+describe('unsaved changes', () => {
+  const leave = (router: ReturnType<typeof mount>['router']) => {
+    act(() => {
+      void router.navigate('/somewhere-else')
+    })
+  }
+
+  it('lets a person leave freely while nothing has changed', async () => {
+    const { router } = mount()
+    await ready()
+    leave(router)
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('asks before leaving with an edited assistant setting, and Keep editing stays put', async () => {
+    const { router } = mount()
+    await ready()
+    await userEvent.click(toggle(/Reply to comments/))
+    leave(router)
+
+    expect(await screen.findByText('You have changes that are not saved')).toBeInTheDocument()
+    expect(screen.queryByText('Elsewhere')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    expect(screen.queryByText('You have changes that are not saved')).not.toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/settings')
+    expect(toggle(/Reply to comments/)).not.toBeChecked()
+  })
+
+  it('leaves, discarding the edits, when the person confirms', async () => {
+    const { router } = mount()
+    await ready()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Brand name' }), ' 2')
+    leave(router)
+    await userEvent.click(await screen.findByRole('button', { name: 'Leave without saving' }))
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('also protects an edited business profile', async () => {
+    const { router } = mount()
+    await ready()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Brand name' }), 'x')
+    leave(router)
+    expect(await screen.findByText('You have changes that are not saved')).toBeInTheDocument()
+  })
+
+  it('counts an edit that is not valid yet as an edit', async () => {
+    const { router } = mount()
+    await ready()
+    await userEvent.clear(screen.getByRole('spinbutton', { name: 'Longest reply' }))
+    leave(router)
+    expect(await screen.findByText('You have changes that are not saved')).toBeInTheDocument()
+  })
+
+  it('stops asking once the changes are saved', async () => {
+    const { router, state } = mount()
+    await ready()
+    await userEvent.click(toggle(/Reply to comments/))
+    await userEvent.click(assistantSave())
+    await waitFor(() => {
+      expect(state.ai.comment_automation_enabled).toBe(false)
+    })
+    await waitFor(() => {
+      expect(assistantSave()).toBeDisabled()
+    })
+    leave(router)
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('asks the browser to confirm when the tab is closed with edits, and not otherwise', async () => {
+    mount()
+    await ready()
+    const closing = () => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    expect(closing()).toBe(false)
+    await userEvent.click(toggle(/Reply to comments/))
+    expect(closing()).toBe(true)
   })
 })

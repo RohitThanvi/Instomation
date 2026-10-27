@@ -1,11 +1,21 @@
+import { useCallback, useState } from 'react'
 import { useRequiredOrganization } from '@/auth/session-context'
 import { can } from '@/auth/permissions'
 import { Notice } from '@/components/ui/notice'
 import { AssistantSection } from './assistant-section'
 import { ProfileSection } from './profile-section'
+import { UnsavedChangesGuard } from './unsaved-changes'
 
 export function SettingsPage() {
   const { role } = useRequiredOrganization()
+  const [assistantDirty, setAssistantDirty] = useState(false)
+  const [profileDirty, setProfileDirty] = useState(false)
+  const reportAssistant = useCallback((dirty: boolean) => {
+    setAssistantDirty(dirty)
+  }, [])
+  const reportProfile = useCallback((dirty: boolean) => {
+    setProfileDirty(dirty)
+  }, [])
   return (
     <div className="animate-fade-in max-w-3xl space-y-6">
       <div className="space-y-2">
@@ -17,8 +27,9 @@ export function SettingsPage() {
       </div>
       {can(role, 'settings_manage') ? (
         <>
-          <AssistantSection />
-          <ProfileSection />
+          <UnsavedChangesGuard dirty={assistantDirty || profileDirty} />
+          <AssistantSection onDirtyChange={reportAssistant} />
+          <ProfileSection onDirtyChange={reportProfile} />
         </>
       ) : (
         <Notice tone="info" title="Settings are for owners and admins">
