@@ -86,18 +86,18 @@ src/routes/      route components (lazy-loaded), providers, router
 
 ## Status
 
-| Screen                                                                  | State                                                                                 |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                  |
-| 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Answers are kept in the browser while filling in, then saved to the API on activation |
-| 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                           |
-| 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                |
-| Handoff queue (waiting and resolved views, live counts)                 | Done. Live API; polls the waiting list; inbox actions refresh it; see Known follow-ups |
-| 5. Automation rules                                                     | Next                                                                                  |
-| 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box    |
-| 7a. Settings (assistant behaviour, business profile)                    | Done. Owners/admins; live API; see Known follow-ups                                   |
-| 7b. Usage (AI requests and estimated cost)                              | Done. Owners/admins; live API; see Known follow-ups                                                                               |
-| 8. Role-aware UI (permission helper, applied per screen)                | Started: dashboard analytics, onboarding activation, knowledge base, sidebar and mobile menu |
+| Screen                                                                  | State                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Auth shell (Clerk sign-in/up, guard, layout, error boundary, toasts) | Done                                                                                                                                                                                                                                                           |
+| 2. Onboarding (9 steps) + Instagram connection and OAuth return page    | Done. Answers are kept in the browser while filling in, then saved to the API on activation                                                                                                                                                                    |
+| 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                                                                                                                                                                                                    |
+| 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                                                                                                                                                                                         |
+| Handoff queue (waiting and resolved views, live counts)                 | Done. Live API; polls the waiting list; inbox actions refresh it; see Known follow-ups                                                                                                                                                                         |
+| 5. Automation rules                                                     | Next                                                                                                                                                                                                                                                           |
+| 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box                                                                                                                                                                             |
+| 7a. Settings (assistant behaviour, business profile)                    | Done. Owners/admins; live API; see Known follow-ups                                                                                                                                                                                                            |
+| 7b. Usage (AI requests and estimated cost)                              | Done. Owners/admins; live API; see Known follow-ups                                                                                                                                                                                                            |
+| 8. Role-aware UI (permission helper, applied per screen)                | Audited against `backend/app/core/rbac.py` (matrix identical): dashboard analytics, onboarding activation, knowledge base, settings, usage, Instagram connect, sidebar and mobile menu. Inbox and handoffs are tenant-scoped, not role-gated, as on the server |
 
 ## Known follow-ups
 
@@ -146,6 +146,7 @@ src/routes/      route components (lazy-loaded), providers, router
   3. `PATCH /settings/ai` with `dm_automation_enabled`, `comment_automation_enabled` and `private_reply_enabled`, last.
 
   The calls, bodies and responses were checked against the real backend on PostgreSQL (see ARCHITECTURE.md).
+
 - **Knowledge base** (`src/features/knowledge`, route `/knowledge`, owners and admins; managers and staff get an
   explanation and the sidebar link is hidden, while the server still enforces it). Entries load 20 at a time, oldest
   first, with a server-side type filter. Add and edit are inline (there is no dialog component); delete is a two-step
