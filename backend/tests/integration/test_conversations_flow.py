@@ -17,18 +17,23 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config.settings import get_settings
 from app.core.security import Identity
 from app.main import create_app
+from app.models.business import AutomationRule
 from app.models.enums import (
     AccountType,
     DeliveryStatus,
     InstagramAccountStatus,
     MemberRole,
+    MessageChannel,
     MessageDirection,
     MessageOrigin,
     ProcessingStatus,
+    RuleAction,
+    RuleScope,
 )
 from app.models.identity import Organization, OrganizationMember, User
 from app.models.instagram import Conversation, Customer, InstagramAccount, Message, WebhookEvent
 from app.models.ops import Job
+from app.services.conversations.messages import record_message
 from app.services.events import handlers  # noqa: F401 - registers handlers
 from app.services.instagram.client import InstagramApiError, LongLivedToken
 from app.services.instagram.crypto import TokenCipher
@@ -253,6 +258,57 @@ async def test_inbound_message_creates_customer_conversation_and_message(
         "channel": "dm",
         "status": "received",
     }
+
+
+async def test_the_thread_says_which_automation_rule_wrote_a_message(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    redis: Redis,
+    cipher: TokenCipher,
+) -> None:
+    owner, org_id, account_id, account_external_id = await _org_and_account(session_factory, cipher)
+    sender = f"cust-{uuid.uuid4().hex[:8]}"
+    await _deliver_inbound_message(
+        session_factory, redis, org_id, account_id, account_external_id, sender, "mid-1", "Deliver?"
+    )
+    async with session_factory() as session:
+        inbound = (
+            await session.execute(select(Message).where(Message.organization_id == org_id))
+        ).scalar_one()
+        conversation = await session.get(Conversation, inbound.conversation_id)
+        assert conversation is not None
+        rule = AutomationRule(
+            organization_id=org_id,
+            name="Delivery",
+            applies_to=RuleScope.DM,
+            keywords=["deliver"],
+            action=RuleAction.REPLY,
+            reply_text="We deliver!",
+        )
+        session.add(rule)
+        await session.flush()
+        for body, rule_id in (("From the rule", rule.id), ("From the AI", None)):
+            await record_message(
+                session,
+                org_id,
+                account_id,
+                conversation,
+                direction=MessageDirection.OUTBOUND,
+                origin=MessageOrigin.AI,
+                channel=MessageChannel.DM,
+                body=body,
+                status=DeliveryStatus.SENT,
+                automation_rule_id=rule_id,
+            )
+        await session.commit()
+        rule_id = rule.id
+        conversation_id = conversation.id
+
+    items = (
+        await client.get(f"/api/v1/conversations/{conversation_id}/messages", headers=_auth(owner))
+    ).json()["items"]
+    by_body = {item["body"]: item["automation_rule_id"] for item in items}
+    assert by_body == {"Deliver?": None, "From the rule": str(rule_id), "From the AI": None}
 
 
 async def test_second_message_reuses_same_conversation_and_dedupes_redelivery(

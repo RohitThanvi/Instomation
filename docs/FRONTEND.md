@@ -78,7 +78,7 @@ src/routes/      route components (lazy-loaded), providers, router
     first**, and has no text search or latest-activity sort. Search and sort therefore run in the browser over what is
     loaded, and the list says so.
 - **No placeholder endpoints.** Every function in `src/api/` calls a real endpoint. For a screen whose endpoint does
-  not exist yet (`/comments`, `/automations`), render an explicit unavailable state: no fabricated data, no fake
+  not exist yet (`/comments`), render an explicit unavailable state: no fabricated data, no fake
   success. The old shared `NotYetAvailable` component was deleted once nothing used it.
 - **Retries.** Only network failures and `AUTH_PROVIDER_UNAVAILABLE` are retried (bounded).
 - **Design.** All colors, radii, shadows, fonts and motion are tokens in `src/index.css` (`@theme`).

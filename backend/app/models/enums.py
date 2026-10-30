@@ -117,6 +117,19 @@ class RuleScope(StrEnum):
     BOTH = "both"
 
 
+class RuleAction(StrEnum):
+    """What a matching automation rule does instead of asking the AI."""
+
+    REPLY = "reply"  # send the rule's own fixed text
+    HANDOFF = "handoff"  # a person answers
+    SKIP = "skip"  # send nothing automatically
+
+
+class KeywordMatch(StrEnum):
+    ANY = "any"  # at least one keyword appears
+    ALL = "all"  # every keyword appears
+
+
 class OffHoursPolicy(StrEnum):
     RESPOND = "respond"
     AUTO_REPLY = "auto_reply"

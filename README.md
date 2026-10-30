@@ -15,7 +15,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 1 | Project setup, config, logging, tooling | Backend done; frontend scaffold done; CI workflow staged (see below) |
 | F | Frontend (see `docs/FRONTEND.md`) | Screens 1-4 of 8 done (auth shell, onboarding, dashboard with live analytics, inbox that labels public comments, public replies and private replies); onboarding saves to the API on activation; knowledge base screen done (owners/admins); handoff queue screen done (needs-attention and resolved views, live counts, links into the inbox); mobile navigation menu; automation rules next |
 | 2 | Clerk authentication | Done (JWT verification, `GET /api/v1/auth/me`) |
-| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0006`, head is `0006`) |
+| 3 | PostgreSQL models + Alembic | Done (23 tables; migrations `0001`-`0007`, head is `0007`) |
 | 4 | Redis + worker system | Done (queues, durable jobs, retry/backoff, rate limits, locks, cron) |
 | 5 | Multi-tenant organizations, RBAC | Done (tenant resolution, roles, org/member API; member invites pending) |
 | 6 | Instagram OAuth + API abstraction | Done (OAuth, encrypted tokens, Graph client, token refresh cron) |
@@ -29,6 +29,7 @@ natural, human tone, detects leads, and hands off to a human when needed.
 | 15 | Human takeover | Done (handoff lifecycle follows takeover / hand-back / resolve; handoff queue + counts API, role- and tenant-scoped; no auto-release or notifications) |
 | 16-17 | Analytics and usage/cost API | Done (backend: `/analytics/overview` and `/usage`, UTC days, tenant- and role-scoped; no plan-limit comparison, no export) |
 | 18 | Dashboard (frontend screens) | In progress: the dashboard's analytics are wired to the live API with a 7/30/90-day selector. Onboarding's activation saves the profile, products (as knowledge entries) and reply switches to the real API. Knowledge base, handoff queue and settings (assistant behaviour and business profile, owners/admins) and usage (AI requests and estimated cost, owners/admins) screens are done. Not started: automation rules |
+| 21 | Automation rules (backend) | Done (IF keywords THEN reply, hand over or send nothing, for DMs, comments or both; runs behind every reply gate and before any AI call, fails closed, never sends half of a rule; CRUD, ordering, preview and audit under `/api/v1/automations`; migration `0007` reshapes the previously unused table; matching on message intent was dropped because the pipeline never assigns one to an allowed message). The screen is next |
 | 19-20 | Tests, deployment, hardening | Mostly done (request hardening: per-address and per-member rate limits, body-size cap, trusted-proxy client address, DB pool and statement timeouts with 503 load shedding, production security headers; not load-tested; compose runs one worker per queue with liveness checks; `.env.example` matches the code; deployment and worker-registry regression tests; coverage gate at 94% in `pyproject.toml`; `docs/DEPLOYMENT.md`; CI staged in `docs/ci/` with migration-drift and frontend jobs; the API and every worker verified as real processes. Pending: a real container run, because the compose stack and images have never been built, and activating the staged workflows) |
 
 Update this table in the same commit that completes a phase.

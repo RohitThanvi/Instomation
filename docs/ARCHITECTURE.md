@@ -639,6 +639,43 @@ matched the database exactly (5 inbound, 1 failed AI reply, 3 handoffs by reason
 1 escalated, 5 usage rows split 3 moderation and 2 comment replies).
 
 
+## Automation rules
+
+A rule is `IF the message contains these keywords THEN reply with this text / hand over / send nothing`, for DMs,
+comments or both. Rules run inside the existing reply step, so a message still has to pass every gate that holds back
+an AI reply first (automation switched on, moderation allowed it, nobody else owns the conversation, no newer message,
+the hourly reply cap), and then, before any model is asked, the organization's enabled rules are tried in priority
+order; the first that matches decides. With none, the AI answers as before.
+
+- **Matching** (`app/services/automation/matching.py`) is pure: text and keywords are compared after Unicode
+  compatibility folding, case folding and whitespace collapsing, as substrings (so scripts without spaces work and
+  `price` also matches `priceless`; authors choose specific keywords). `any` needs one keyword, `all` needs every one;
+  a rule without keywords never fires, and a blank keyword never matches.
+- **Fail closed.** A matched rule is applied under the conversation lock with every gate checked again, exactly as an AI
+  reply is. A rule that cannot be carried out in full hands over rather than sending half: reply text longer than the
+  limit in force now (limits can be tightened after a rule is saved), or a comment rule with a private message while
+  private replies are off, because its public reply promises that message. The handoff reason is `low_confidence`.
+- **A rule's reply is a normal pending message** (origin `ai`, `automation_rule_id` set, no confidence), queued through
+  the same send jobs, so delivery, retries and the inbox need no special case. It costs no AI usage; the moderation
+  check before it still does.
+- **Intents are not a trigger.** The original table anticipated matching on a topical intent. The moderation policy only
+  assigns an intent to messages it blocks or escalates, never to an allowed one, so such a rule could never have fired
+  and the idea was removed rather than shipped as a control that does nothing.
+- **API** (`/api/v1/automations`, permission `automation_manage`: owners, admins and managers): list, create, replace,
+  soft delete, `PUT /order` (the whole list of ids or nothing, `409` if it is stale) and `POST /preview` (which rule would
+  answer a made-up message, using the same matcher). Writes are serialised per organization by locking the organization
+  row, so concurrent creates cannot exceed `AUTOMATION_MAX_RULES` and a reorder cannot interleave with an edit. Reply
+  text is held to the limits the AI's own replies are (`COMMENT_REPLY_MAX_CHARS`, `DM_REPLY_MAX_BYTES`). Creating,
+  updating, deleting and reordering are audited with ids only, never the rule's text.
+
+Tested on real PostgreSQL and Redis: the matcher exhaustively, the API (roles, isolation between organizations,
+validation, text limits, the cap under concurrency, ordering, preview, audit), the pipeline for DMs and comments (a rule
+answers with no model call, every gate still holds, ordering, the fail-closed branches, the message-to-rule link) and
+the migration in both directions. Every enforcement rule was mutated and caught, and the mutations found three tests
+that were not testing what they claimed (a comment-skip test that never reached its rule, and two limits checked only
+with ASCII text). Not verified: rules against real Instagram traffic, and how often keyword rules fire against what
+real customers write.
+
 ## Abuse protection and load shedding
 
 Request-level protection lives in ASGI middleware and one dependency, in this order from the outside in: request

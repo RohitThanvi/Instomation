@@ -6,13 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings
 from app.models.base import utcnow
-from app.models.business import AiSettings, BusinessProfile
+from app.models.business import AiSettings, AutomationRule, BusinessProfile
 from app.models.enums import (
     DeliveryStatus,
     HandoffReason,
     MessageChannel,
     MessageDirection,
     MessageOrigin,
+    RuleAction,
+    RuleScope,
 )
 from app.models.instagram import Conversation, Message
 from app.models.ops import Job
@@ -29,6 +31,7 @@ from app.services.automation.dm_reply import (
     retrieve_knowledge,
 )
 from app.services.automation.prompt import build_prompt
+from app.services.automation.rules import matching_rule
 from app.services.conversations.conversations import is_ai_silenced, request_human_handoff
 from app.services.conversations.messages import COMMENT_ID_PREFIX, record_message
 from app.services.instagram.capabilities import Capabilities, Feature
@@ -103,6 +106,108 @@ async def _skip_reason(
     return None
 
 
+async def _queue_comment_reply(
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    conversation: Conversation,
+    message: Message,
+    public_text: str,
+    private_text: str,
+    rule_id: uuid.UUID | None,
+) -> ReplyResult:
+    """Record the public reply (and the private message, when there is one) as pending and queue
+    their sends. `rule_id` names the automation rule that wrote them, or is None for the AI."""
+    reply = await record_message(
+        session,
+        org_id,
+        conversation.instagram_account_id,
+        conversation,
+        direction=MessageDirection.OUTBOUND,
+        origin=MessageOrigin.AI,
+        channel=MessageChannel.COMMENT,
+        body=public_text,
+        status=DeliveryStatus.PENDING,
+        automation_rule_id=rule_id,
+    )
+    assert reply is not None  # no external_message_id, so never deduplicated away
+    assert message.external_message_id is not None
+    comment_id = message.external_message_id.removeprefix(COMMENT_ID_PREFIX)
+
+    async def queue_send(function: str, sent: Message) -> Job:
+        return await add_job(
+            session,
+            QueueName.INSTAGRAM,
+            function,
+            {
+                "message_id": str(sent.id),
+                "comment_message_id": str(message.id),
+                "comment_id": comment_id,
+            },
+            org_id,
+        )
+
+    jobs = [await queue_send(SEND_FUNCTION, reply)]
+    if private_text:
+        private = await record_message(
+            session,
+            org_id,
+            conversation.instagram_account_id,
+            conversation,
+            direction=MessageDirection.OUTBOUND,
+            origin=MessageOrigin.AI,
+            channel=MessageChannel.PRIVATE_REPLY,
+            body=private_text,
+            status=DeliveryStatus.PENDING,
+            automation_rule_id=rule_id,
+        )
+        assert private is not None  # no external_message_id, so never deduplicated away
+        jobs.append(await queue_send(PRIVATE_SEND_FUNCTION, private))
+    return ReplyResult(ReplyOutcome.QUEUED, tuple(jobs))
+
+
+async def _apply_rule(
+    session: AsyncSession,
+    settings: Settings,
+    message: Message,
+    conversation: Conversation,
+    ai_settings: AiSettings,
+    rule: AutomationRule,
+) -> ReplyResult:
+    """Do what a matching automation rule says instead of asking the AI.
+
+    No model is involved, but the conversation is locked and every gate re-checked first, exactly
+    as for an AI reply. A rule that cannot be carried out in full hands over rather than send half:
+    the public reply of a rule with a private message promises that message.
+    """
+    org_id = message.organization_id
+    await session.refresh(conversation, with_for_update=True)
+    skip = await _skip_reason(session, message, conversation, ai_settings, settings)
+    if skip is not None:
+        return ReplyResult(skip)
+    if rule.action is RuleAction.SKIP:
+        return ReplyResult(ReplyOutcome.RULE_SKIPPED)
+    if rule.action is RuleAction.HANDOFF:
+        assert rule.handoff_reason is not None  # ck_automation_rules_action_fields
+        await request_human_handoff(session, conversation, org_id, rule.handoff_reason)
+        return ReplyResult(ReplyOutcome.HANDED_OFF)
+    public_text = rule.reply_text
+    assert public_text is not None  # ck_automation_rules_action_fields
+    private_text = rule.private_reply_text or ""
+    can_send_all = len(public_text) <= settings.comment_reply_max_chars and (
+        not private_text
+        or (
+            _private_replies_allowed(ai_settings, settings)
+            and len(private_text.encode()) <= settings.dm_reply_max_bytes
+        )
+    )
+    if not can_send_all:
+        await request_human_handoff(session, conversation, org_id, HandoffReason.LOW_CONFIDENCE)
+        return ReplyResult(ReplyOutcome.HANDED_OFF)
+    return await _queue_comment_reply(
+        session, org_id, conversation, message, public_text, private_text, rule.id
+    )
+
+
 async def generate_comment_reply(
     session: AsyncSession, gateway: AIGateway, settings: Settings, message_id: uuid.UUID
 ) -> ReplyResult:
@@ -129,6 +234,15 @@ async def generate_comment_reply(
     if skip is not None:
         return ReplyResult(skip)
     assert ai_settings is not None  # guaranteed by the AUTOMATION_OFF check above
+
+    rule = await matching_rule(
+        session,
+        org_id,
+        RuleScope.COMMENT,
+        message.body,
+    )
+    if rule is not None:
+        return await _apply_rule(session, settings, message, conversation, ai_settings, rule)
 
     profile = (
         await session.execute(
@@ -181,47 +295,6 @@ async def generate_comment_reply(
         )
         return ReplyResult(ReplyOutcome.HANDED_OFF)
 
-    reply = await record_message(
-        session,
-        org_id,
-        conversation.instagram_account_id,
-        conversation,
-        direction=MessageDirection.OUTBOUND,
-        origin=MessageOrigin.AI,
-        channel=MessageChannel.COMMENT,
-        body=parsed.reply.strip(),
-        status=DeliveryStatus.PENDING,
+    return await _queue_comment_reply(
+        session, org_id, conversation, message, parsed.reply.strip(), private_text, None
     )
-    assert reply is not None  # no external_message_id, so never deduplicated away
-    assert message.external_message_id is not None
-    comment_id = message.external_message_id.removeprefix(COMMENT_ID_PREFIX)
-
-    async def queue_send(function: str, sent: Message) -> Job:
-        return await add_job(
-            session,
-            QueueName.INSTAGRAM,
-            function,
-            {
-                "message_id": str(sent.id),
-                "comment_message_id": str(message.id),
-                "comment_id": comment_id,
-            },
-            org_id,
-        )
-
-    jobs = [await queue_send(SEND_FUNCTION, reply)]
-    if private_text:
-        private = await record_message(
-            session,
-            org_id,
-            conversation.instagram_account_id,
-            conversation,
-            direction=MessageDirection.OUTBOUND,
-            origin=MessageOrigin.AI,
-            channel=MessageChannel.PRIVATE_REPLY,
-            body=private_text,
-            status=DeliveryStatus.PENDING,
-        )
-        assert private is not None  # no external_message_id, so never deduplicated away
-        jobs.append(await queue_send(PRIVATE_SEND_FUNCTION, private))
-    return ReplyResult(ReplyOutcome.QUEUED, tuple(jobs))

@@ -124,6 +124,10 @@ class Message(UUIDPrimaryKey, TenantOwned, Timestamps, Base):
     direction: Mapped[MessageDirection] = mapped_column(enum_column(MessageDirection))
     origin: Mapped[MessageOrigin] = mapped_column(enum_column(MessageOrigin))
     channel: Mapped[MessageChannel | None] = mapped_column(enum_column(MessageChannel))
+    # Set when an automation rule, not the AI, wrote this message.
+    automation_rule_id: Mapped[uuid.UUID | None] = _fk(
+        "automation_rules.id", ondelete="SET NULL", nullable=True
+    )
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[DeliveryStatus] = mapped_column(enum_column(DeliveryStatus), index=True)
     intent: Mapped[Intent | None] = mapped_column(enum_column(Intent))

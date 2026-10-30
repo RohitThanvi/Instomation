@@ -52,7 +52,7 @@ Compose overrides `DATABASE_URL` and `REDIS_URL` for its own containers; everyth
 
 Run `alembic upgrade head` once per release, as its own step, before starting the new API and workers. Do not
 put it in every replica's start-up command. Compose does this with the one-shot `migrate` service, and the API
-and workers wait for it to complete. Check what is applied with `alembic current` (head is `0006`), and confirm
+and workers wait for it to complete. Check what is applied with `alembic current` (head is `0007`), and confirm
 models and migrations agree with `alembic check` (CI runs both against an empty database on every change).
 
 Every schema change ships an Alembic migration. Migration `0004` adds an index on `messages`; on a large live

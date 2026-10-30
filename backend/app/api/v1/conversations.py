@@ -43,6 +43,7 @@ def _message_out(message: Message) -> MessageOut:
         direction=message.direction,
         origin=message.origin,
         channel=message.channel,
+        automation_rule_id=message.automation_rule_id,
         body=message.body,
         status=message.status,
         intent=message.intent,

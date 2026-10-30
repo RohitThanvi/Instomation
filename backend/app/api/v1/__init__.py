@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     analytics,
     auth,
+    automations,
     business,
     conversations,
     handoffs,
@@ -23,3 +24,4 @@ api_router.include_router(knowledge.router)
 api_router.include_router(business.router)
 api_router.include_router(handoffs.router)
 api_router.include_router(analytics.router)
+api_router.include_router(automations.router)

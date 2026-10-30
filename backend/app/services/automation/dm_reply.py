@@ -9,13 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import Settings
 from app.models.base import utcnow
-from app.models.business import AiSettings, BusinessProfile, KnowledgeEntry
+from app.models.business import AiSettings, AutomationRule, BusinessProfile, KnowledgeEntry
 from app.models.enums import (
     DeliveryStatus,
     HandoffReason,
     MessageChannel,
     MessageDirection,
     MessageOrigin,
+    RuleAction,
+    RuleScope,
 )
 from app.models.instagram import Conversation, Customer, Message
 from app.models.ops import Job
@@ -24,6 +26,7 @@ from app.services.ai.provider import AIMessage
 from app.services.ai.structured import parse_model
 from app.services.ai.usage import record_usage
 from app.services.automation.prompt import PromptContext, build_prompt, disallowed_urls
+from app.services.automation.rules import matching_rule
 from app.services.conversations.conversations import is_ai_silenced, request_human_handoff
 from app.services.conversations.messages import COMMENT_ID_PREFIX, record_message
 from app.services.knowledge.search import search_entries
@@ -45,6 +48,7 @@ class ReplyOutcome(StrEnum):
     ALREADY_ANSWERED = "already_answered"
     SUPERSEDED = "superseded"  # a newer customer message will be answered instead
     RATE_LIMITED = "rate_limited"
+    RULE_SKIPPED = "rule_skipped"  # an automation rule says to send nothing
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +204,78 @@ def escalation_reason(
     return None
 
 
+async def _queue_dm_reply(
+    session: AsyncSession,
+    org_id: uuid.UUID,
+    conversation: Conversation,
+    text: str,
+    rule_id: uuid.UUID | None,
+) -> ReplyResult:
+    """Record the reply as pending and hand it to the instagram queue. `rule_id` names the
+    automation rule that wrote it, or is None for the AI."""
+    reply = await record_message(
+        session,
+        org_id,
+        conversation.instagram_account_id,
+        conversation,
+        direction=MessageDirection.OUTBOUND,
+        origin=MessageOrigin.AI,
+        channel=MessageChannel.DM,
+        body=text,
+        status=DeliveryStatus.PENDING,
+        automation_rule_id=rule_id,
+    )
+    assert reply is not None  # no external_message_id, so never deduplicated away
+    customer = await session.get(Customer, conversation.customer_id)
+    assert customer is not None
+    job = await add_job(
+        session,
+        QueueName.INSTAGRAM,
+        "send_instagram_message",
+        {
+            "message_id": str(reply.id),
+            "instagram_account_id": str(conversation.instagram_account_id),
+            "recipient_external_id": customer.external_user_id,
+        },
+        org_id,
+    )
+    return ReplyResult(ReplyOutcome.QUEUED, (job,))
+
+
+async def _apply_rule(
+    session: AsyncSession,
+    settings: Settings,
+    message: Message,
+    conversation: Conversation,
+    ai_settings: AiSettings,
+    rule: AutomationRule,
+) -> ReplyResult:
+    """Do what a matching automation rule says instead of asking the AI.
+
+    No model is involved, but the conversation is locked and every gate re-checked first, exactly
+    as for an AI reply: a person may have taken over since the gates last ran.
+    """
+    org_id = message.organization_id
+    await session.refresh(conversation, with_for_update=True)
+    skip = await _skip_reason(session, message, conversation, ai_settings, settings)
+    if skip is not None:
+        return ReplyResult(skip)
+    if rule.action is RuleAction.SKIP:
+        return ReplyResult(ReplyOutcome.RULE_SKIPPED)
+    if rule.action is RuleAction.HANDOFF:
+        assert rule.handoff_reason is not None  # ck_automation_rules_action_fields
+        await request_human_handoff(session, conversation, org_id, rule.handoff_reason)
+        return ReplyResult(ReplyOutcome.HANDED_OFF)
+    text = rule.reply_text
+    assert text is not None  # ck_automation_rules_action_fields
+    if len(text.encode()) > settings.dm_reply_max_bytes:
+        # Saved under a looser limit than the one in force now: hand over rather than send a
+        # message Instagram would refuse.
+        await request_human_handoff(session, conversation, org_id, HandoffReason.LOW_CONFIDENCE)
+        return ReplyResult(ReplyOutcome.HANDED_OFF)
+    return await _queue_dm_reply(session, org_id, conversation, text, rule.id)
+
+
 async def generate_dm_reply(
     session: AsyncSession, gateway: AIGateway, settings: Settings, message_id: uuid.UUID
 ) -> ReplyResult:
@@ -226,6 +302,15 @@ async def generate_dm_reply(
     if skip is not None:
         return ReplyResult(skip)
     assert ai_settings is not None  # guaranteed by the AUTOMATION_OFF check above
+
+    rule = await matching_rule(
+        session,
+        org_id,
+        RuleScope.DM,
+        message.body,
+    )
+    if rule is not None:
+        return await _apply_rule(session, settings, message, conversation, ai_settings, rule)
 
     profile = (
         await session.execute(
@@ -262,29 +347,4 @@ async def generate_dm_reply(
         )
         return ReplyResult(ReplyOutcome.HANDED_OFF)
 
-    reply = await record_message(
-        session,
-        org_id,
-        conversation.instagram_account_id,
-        conversation,
-        direction=MessageDirection.OUTBOUND,
-        origin=MessageOrigin.AI,
-        channel=MessageChannel.DM,
-        body=parsed.reply.strip(),
-        status=DeliveryStatus.PENDING,
-    )
-    assert reply is not None  # no external_message_id, so never deduplicated away
-    customer = await session.get(Customer, conversation.customer_id)
-    assert customer is not None
-    job = await add_job(
-        session,
-        QueueName.INSTAGRAM,
-        "send_instagram_message",
-        {
-            "message_id": str(reply.id),
-            "instagram_account_id": str(conversation.instagram_account_id),
-            "recipient_external_id": customer.external_user_id,
-        },
-        org_id,
-    )
-    return ReplyResult(ReplyOutcome.QUEUED, (job,))
+    return await _queue_dm_reply(session, org_id, conversation, parsed.reply.strip(), None)

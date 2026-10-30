@@ -42,6 +42,8 @@ class MessageOut(BaseModel):
     direction: MessageDirection
     origin: MessageOrigin
     channel: MessageChannel | None
+    # Set when an automation rule, not the AI, wrote the message.
+    automation_rule_id: uuid.UUID | None
     body: str
     status: DeliveryStatus
     intent: Intent | None

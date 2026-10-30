@@ -126,7 +126,18 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
 4. Inbox: 3 panes (list with search/filter/sort/tags/status/priority, conversation, customer context).
    Conversation states: AI_ACTIVE, HUMAN_REQUIRED, HUMAN_ACTIVE, RESOLVED. Show intent, AI confidence,
    lead status, internal notes, human takeover and hand-back controls.
-5. Automation rules (structured IF/THEN, no visual workflow builder in V1).
+5. Automation rules (structured IF/THEN, no visual workflow builder in V1). Backend built (`/api/v1/automations`,
+   permission `automation_manage`: owners, admins and managers). A rule is `{ id, name, enabled, priority,
+   applies_to: dm|comment|both, keywords (1 to 20, each up to 60 characters), keyword_match: any|all,
+   action: reply|handoff|skip, reply_text, private_reply_text (comment or both, reply rules only), handoff_reason,
+   created_at, updated_at }`. `GET` returns `{ items, next_cursor: null }` in the order rules are tried;
+   `POST` creates (appended last, `201`), `PUT /{id}` replaces (send the whole rule), `DELETE /{id}` is `204`,
+   `PUT /order` takes `{ ids }` (every rule's id or `409 AUTOMATION_RULE_ORDER_STALE`), `POST /preview` takes
+   `{ scope: dm|comment, text }` and returns `{ rule | null }`. A reply rule needs `reply_text` and no reason; a
+   handoff rule needs `handoff_reason` and no text; a skip rule has neither; the server returns a generic `422` for
+   an incoherent rule and a specific `AUTOMATION_RULE_INVALID` message when text is too long (comment replies are
+   limited in characters, direct messages in bytes), so validate on the client. `409 AUTOMATION_RULE_LIMIT` means the
+   organization is at its cap. Messages carry `automation_rule_id` when a rule wrote them.
 6. Knowledge base (FAQs, products, services, policies).
 7. Settings (Instagram, AI, business, automation, working hours), usage, and an internal admin area
    guarded by a server-provided platform-admin flag.

@@ -53,6 +53,17 @@ Known limits (be honest about them when sizing):
 - None of these defaults has been load-tested; they are conservative starting points. The per-member limit assumes the
   app's polling (inbox, thread, handoffs) from a handful of tabs.
 
+## Automation rules
+
+Rules send text their author wrote, so they carry no model risk, but they are an easy way to send the wrong thing
+automatically, so they run behind every gate an AI reply passes and are applied under the conversation lock with the
+gates checked again (see `docs/ARCHITECTURE.md`). They can never reply to a message moderation blocked, never answer a
+conversation a person owns, and count toward the hourly reply cap, which also stops two automated senders from
+answering each other in a loop. One that cannot be carried out in full (text now over a limit, a private message while
+private replies are off) hands over instead of sending part of it. Managing them needs `automation_manage` (owners,
+admins, managers; staff get 403), is scoped to the organization by every query, and is audited without the rule text.
+A message written by a rule carries `automation_rule_id`, so the inbox can always say which rule sent it.
+
 ## Data retention on Instagram disconnect
 
 Removed immediately: access token, token expiry, webhook subscription flag. Retained until the owner deletes

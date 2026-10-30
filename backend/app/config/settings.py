@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: float = Field(default=10.0, gt=0)
     db_statement_timeout_ms: int = Field(default=15_000, ge=0)
 
+    # ---- Automation rules ----
+    # Rules an organization may have (all are loaded and tried for every message that reaches them).
+    automation_max_rules: int = Field(default=50, ge=1, le=200)
+
     # ---- Abuse protection ----
     # Reverse proxies in front of the API that each append to X-Forwarded-For (0: the TCP peer is
     # the client). Never set it above the real number: a client could then choose its own address.

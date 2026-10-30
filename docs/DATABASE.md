@@ -47,6 +47,18 @@ PostgreSQL is the source of truth. Models live in `backend/app/models/`, migrati
   from their `comment:` external id, AI replies from the send job that delivered them (`send_comment_reply`,
   `send_private_reply`). Jobs are purged after `JOB_RETENTION_DAYS`, so an AI comment reply older than that cannot be
   recognised and was backfilled as `dm`.
+- `automation_rules` (migration `0007`) holds the IF/THEN rules that answer a message instead of the AI: `applies_to`
+  (`dm` / `comment` / `both`), `keywords` (1 to 20, each up to 60 characters) with `keyword_match` (`any` / `all`),
+  `action` (`reply` / `handoff` / `skip`), `reply_text`, `private_reply_text` (comment rules only), `handoff_reason`,
+  `enabled`, `priority` (lowest is tried first) and soft delete. The table had existed since the first migration with
+  nothing reading or writing it, and described unbuilt features (liking comments, notifying the owner, matching on a
+  topical intent that nothing in the pipeline assigns to an allowed message); `0007` reshapes it. CHECK constraints
+  hold what the API enforces (a reply has text, a handoff has a reason, a skip has neither, there is at least one
+  keyword, a private message is never on a DM-only rule, reply text is not blank), so the reply pipeline can rely on
+  them. The upgrade refuses a table that still holds rows in the old shape; the downgrade deletes all rules, because
+  the old shape cannot represent them, which also keeps downgrade-then-upgrade working.
+- `messages.automation_rule_id` (migration `0007`, nullable FK, `ON DELETE SET NULL`) names the rule that wrote a
+  message, `NULL` for the AI and for people. Rules are soft-deleted, so a deleted rule's messages stay traceable.
 - `messages` is indexed by `(organization_id, created_at)` (migration `0004`) because analytics aggregates one
   organization's messages over a date range; on a very large live table build that index `CONCURRENTLY`.
 - `audit_logs` has no foreign keys on purpose: rows outlive deleted users and organizations.

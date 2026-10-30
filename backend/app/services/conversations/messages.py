@@ -24,6 +24,7 @@ async def record_message(
     channel: MessageChannel | None,
     body: str,
     status: DeliveryStatus,
+    automation_rule_id: uuid.UUID | None = None,
     external_message_id: str | None = None,
     author_user_id: uuid.UUID | None = None,
 ) -> Message | None:
@@ -38,6 +39,7 @@ async def record_message(
         "direction": direction,
         "origin": origin,
         "channel": channel,
+        "automation_rule_id": automation_rule_id,
         "body": body,
         "status": status,
         "author_user_id": author_user_id,
