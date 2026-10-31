@@ -23,6 +23,14 @@ export const MAX_TAG_LENGTH = 50
 export const MAX_TAGS = 50
 export const MAX_MESSAGE_LENGTH = 4000
 
+/**
+ * The backend's default limits for a rule's reply text (`COMMENT_REPLY_MAX_CHARS`, `DM_REPLY_MAX_BYTES`).
+ * They are only used to tell a person early; the server is the authority and its own message is shown
+ * if an operator has changed them.
+ */
+export const COMMENT_REPLY_MAX_CHARS = 300
+export const DM_REPLY_MAX_BYTES = 1000
+
 export const ROUTES = {
   home: '/',
   signIn: '/sign-in',
@@ -32,6 +40,7 @@ export const ROUTES = {
   handoffs: '/handoffs',
   settings: '/settings',
   usage: '/usage',
+  automations: '/automations',
   knowledge: '/knowledge',
   instagramSettings: '/settings/instagram',
 } as const
