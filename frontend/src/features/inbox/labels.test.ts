@@ -12,6 +12,7 @@ import {
   assigneeLabel,
   availableActions,
   canReplyIn,
+  automationCaption,
   channelCaption,
   composerAvailability,
   confidenceLabel,
@@ -151,5 +152,14 @@ describe('channelCaption', () => {
     for (const channel of MESSAGE_CHANNELS) {
       expect(() => channelCaption({ channel, direction: 'outbound' })).not.toThrow()
     }
+  })
+})
+
+describe('automationCaption', () => {
+  it('says so when a rule wrote the message, and is silent for the assistant and for people', () => {
+    expect(automationCaption({ automation_rule_id: '00000000-0000-4000-8000-000000000001' })).toBe(
+      'Sent by an automation rule',
+    )
+    expect(automationCaption({ automation_rule_id: null })).toBeNull()
   })
 })

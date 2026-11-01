@@ -24,6 +24,23 @@ describe('AppLayout navigation', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each(['owner', 'admin', 'manager'] as const)(
+    'offers automation rules to a %s',
+    async (role) => {
+      mount(role)
+      expect(await screen.findByRole('link', { name: 'Automation' })).toHaveAttribute(
+        'href',
+        '/automations',
+      )
+    },
+  )
+
+  it('keeps automation rules from staff', async () => {
+    mount('staff')
+    expect(await screen.findByRole('link', { name: 'Inbox' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Automation' })).not.toBeInTheDocument()
+  })
+
   it.each(['owner', 'admin'] as const)('offers usage to an %s', async (role) => {
     mount(role)
     expect(await screen.findByRole('link', { name: 'Usage' })).toHaveAttribute('href', '/usage')

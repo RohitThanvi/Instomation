@@ -51,6 +51,29 @@ describe('message thread', () => {
     expect(within(log).getByText('Team member')).toBeInTheDocument()
   })
 
+  it('says which message a rule wrote rather than the assistant', async () => {
+    mountConversation(
+      new FakeInbox({ state: 'ai_active' }, [
+        messageWire({ body: 'Do you deliver?' }),
+        outbound({
+          origin: 'ai',
+          body: 'We deliver across Jaipur.',
+          status: 'sent',
+          automation_rule_id: '00000000-0000-4000-8000-000000000042',
+        }),
+        outbound({ origin: 'ai', body: 'The assistant answered this one.', status: 'sent' }),
+      ]),
+    )
+    const log = await thread()
+    const caption = within(log).getByText('Sent by an automation rule') // exactly one
+    // The caption sits with the rule's message and not with the assistant's own.
+    let shared = caption.parentElement
+    const ruleBody = within(log).getByText('We deliver across Jaipur.')
+    while (shared !== null && !shared.contains(ruleBody)) shared = shared.parentElement
+    expect(shared).not.toBeNull()
+    expect(shared).not.toContainElement(within(log).getByText('The assistant answered this one.'))
+  })
+
   it('tells the public comment, the public reply and the private reply apart', async () => {
     mountConversation(
       new FakeInbox({ state: 'ai_active' }, [

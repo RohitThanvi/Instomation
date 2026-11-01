@@ -79,6 +79,21 @@ describe('mobile navigation', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows automation rules to a manager and hides them from staff in the menu', async () => {
+    mount('manager')
+    expect(within(await openMenu()).getByRole('link', { name: 'Automation' })).toHaveAttribute(
+      'href',
+      '/automations',
+    )
+  })
+
+  it('hides automation rules from staff in the menu', async () => {
+    mount('staff')
+    expect(
+      within(await openMenu()).queryByRole('link', { name: 'Automation' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('shows settings to an owner in the menu', async () => {
     mount('owner')
     expect(within(await openMenu()).getByRole('link', { name: 'Settings' })).toHaveAttribute(
