@@ -242,3 +242,26 @@ export function usageReportWire(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+let ruleCounter = 7000
+
+/** `RuleOut` as the backend serializes an automation rule. Defaults to a direct-message reply rule. */
+export function ruleWire(overrides: Record<string, unknown> = {}) {
+  ruleCounter += 1
+  return {
+    id: uuid(ruleCounter),
+    name: 'Delivery',
+    enabled: true,
+    priority: 0,
+    applies_to: 'dm',
+    keywords: ['delivery', 'shipping'],
+    keyword_match: 'any',
+    action: 'reply',
+    reply_text: 'We deliver across Jaipur.',
+    private_reply_text: null,
+    handoff_reason: null,
+    created_at: '2026-10-01T10:00:00.123456Z',
+    updated_at: '2026-10-01T10:00:00.123456Z',
+    ...overrides,
+  }
+}
