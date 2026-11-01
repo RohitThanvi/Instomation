@@ -169,6 +169,11 @@ export function channelCaption(message: Pick<Message, 'channel' | 'direction'>):
   }
 }
 
+/** Says so when a rule the business wrote, not the assistant, sent a message. */
+export function automationCaption(message: Pick<Message, 'automation_rule_id'>): string | null {
+  return message.automation_rule_id === null ? null : 'Sent by an automation rule'
+}
+
 /** Percentage text, only for values that are valid probabilities. */
 export function confidenceLabel(value: number | null): string | null {
   if (value === null || value < 0 || value > 1) return null

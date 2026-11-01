@@ -3,7 +3,13 @@ import type { Message } from '@/api/conversations'
 import { ChatBubble } from '@/components/ui/chat-bubble'
 import { StatusIndicator } from '@/components/ui/status-indicator'
 import { formatMessageTime } from '@/lib/format'
-import { channelCaption, confidenceLabel, deliveryNotice, INTENT_LABELS } from './labels'
+import {
+  automationCaption,
+  channelCaption,
+  confidenceLabel,
+  deliveryNotice,
+  INTENT_LABELS,
+} from './labels'
 
 function SenderLabel({ message }: { message: Message }) {
   if (message.origin === 'ai') return <span>Assistant</span>
@@ -15,11 +21,13 @@ function MessageFooter({ message }: { message: Message }) {
   const notice = message.direction === 'outbound' ? deliveryNotice(message.status) : null
   const confidence = message.origin === 'ai' ? confidenceLabel(message.ai_confidence) : null
   const channel = channelCaption(message)
+  const automation = automationCaption(message)
   return (
     <div className="space-y-1">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <SenderLabel message={message} />
         {channel !== null && <span>{channel}</span>}
+        {automation !== null && <span>{automation}</span>}
         <time dateTime={message.created_at}>{formatMessageTime(message.created_at)}</time>
         {message.intent !== null && <span>{INTENT_LABELS[message.intent]}</span>}
         {confidence !== null && <span>{confidence}</span>}

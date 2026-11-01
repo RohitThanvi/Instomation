@@ -119,6 +119,7 @@ export function messageWire(overrides: Record<string, unknown> = {}) {
     origin: 'customer',
     // Like the backend: a note has no channel, everything else defaults to a direct message.
     channel: overrides.origin === 'internal_note' ? null : 'dm',
+    automation_rule_id: null,
     body: 'Hi! How much is the starter kit?',
     status: 'received',
     intent: null,

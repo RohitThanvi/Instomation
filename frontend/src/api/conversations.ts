@@ -91,6 +91,8 @@ export const messageSchema = z.object({
   origin: messageOriginSchema,
   /** Where the message lives on Instagram; `null` for internal notes, which are never sent. */
   channel: messageChannelSchema.nullable(),
+  /** Set when an automation rule, not the assistant, wrote the message. */
+  automation_rule_id: z.string().uuid().nullable(),
   body: z.string(),
   status: deliveryStatusSchema,
   intent: intentSchema.nullable(),
