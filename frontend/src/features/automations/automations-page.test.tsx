@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { AutomationsPage } from './automations-page'
@@ -100,12 +100,12 @@ class FakeRules {
 
 function mount(fake: FakeRules, role: Role = 'owner') {
   const api = installMockApi(fake.handlers(role))
-  renderWithSession(<AutomationsPage />, {
+  const { router } = renderWithSession(<AutomationsPage />, {
     path: '/automations',
     route: '/automations',
     requireOrganization: true,
   })
-  return api
+  return { ...api, router }
 }
 
 const sent = (calls: readonly RecordedCall[], method: string, pattern: RegExp | string) =>
@@ -238,6 +238,8 @@ describe('adding a rule', () => {
     await ready()
     await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
     expect(screen.getByRole('form', { name: 'New rule' })).toBeInTheDocument()
+    // One editor at a time: the way to start another is hidden until this one is closed.
+    expect(screen.queryByRole('button', { name: /add a rule/i })).toBeNull()
 
     await fill('Name', '  Opening   hours ')
     await fill('Keywords or phrases', 'opening hours\nWhen do you open\n\nopening  hours')
@@ -391,6 +393,132 @@ describe('adding a rule', () => {
   })
 })
 
+describe('the editor', () => {
+  async function openNew(fake = new FakeRules()) {
+    const result = mount(fake)
+    await screen.findByText('No rules yet')
+    await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
+    return result
+  }
+
+  it('shows the reason selector only for a hand-over rule', async () => {
+    await openNew()
+    expect(screen.queryByLabelText('Why it goes to a person')).toBeNull()
+    await userEvent.selectOptions(screen.getByLabelText('Then'), 'handoff')
+    expect(screen.getByLabelText('Why it goes to a person')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Then'), 'skip')
+    expect(screen.queryByLabelText('Why it goes to a person')).toBeNull()
+  })
+
+  it('tells a direct message rule its limit in bytes and a comment rule its limit in characters', async () => {
+    await openNew()
+    await userEvent.selectOptions(screen.getByLabelText('Applies to'), 'dm')
+    expect(screen.getByText(/Up to 1000 bytes/)).toBeInTheDocument()
+    expect(screen.queryByText(/at most 300 characters/)).toBeNull()
+    await userEvent.selectOptions(screen.getByLabelText('Applies to'), 'comment')
+    expect(screen.getByText(/at most 300 characters/)).toBeInTheDocument()
+    expect(screen.queryByText(/Up to 1000 bytes/)).toBeNull()
+  })
+
+  it('sends a rule that is switched off and one that needs every keyword', async () => {
+    const { calls } = await openNew()
+    await fill('Name', 'Both words')
+    await fill('Keywords or phrases', 'price\ndelivery')
+    await userEvent.selectOptions(screen.getByLabelText('Match a message that contains'), 'all')
+    await fill('Reply', 'Free delivery.')
+    await userEvent.click(screen.getByRole('switch', { name: /Turn this rule on/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save rule' }))
+    await screen.findByText('Rule added')
+    expect(sent(calls, 'POST', BASE)[0]?.body).toMatchObject({
+      enabled: false,
+      keyword_match: 'all',
+    })
+    await waitFor(() => {
+      expect(within(card('Both words')).getByText('Paused')).toBeInTheDocument()
+    })
+  })
+
+  it('stops showing what was wrong once it is fixed, even if the save is then refused', async () => {
+    const fake = new FakeRules()
+    fake.overrides[`POST ${BASE}`] = () => ({
+      status: 409,
+      body: errorBody('AUTOMATION_RULE_LIMIT', 'You can have at most 50 automation rules.'),
+    })
+    await openNew(fake)
+    await userEvent.click(screen.getByRole('button', { name: 'Save rule' }))
+    expect(screen.getByText('Give the rule a name')).toBeInTheDocument()
+    await fill('Name', 'Fixed')
+    await fill('Keywords or phrases', 'hello')
+    await fill('Reply', 'Hi')
+    await userEvent.click(screen.getByRole('button', { name: 'Save rule' }))
+    expect(await screen.findByText('You can have at most 50 automation rules.')).toBeInTheDocument()
+    expect(screen.queryByText('Give the rule a name')).toBeNull()
+    expect(screen.queryByText('Add at least one keyword or phrase')).toBeNull()
+  })
+})
+
+describe('unsaved changes', () => {
+  const leave = (router: ReturnType<typeof mount>['router']) => {
+    act(() => {
+      void router.navigate('/somewhere-else')
+    })
+  }
+
+  it('lets a person leave freely when no editor is open', async () => {
+    const { router } = mount(new FakeRules([ruleWire()]))
+    await ready()
+    leave(router)
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('lets a person leave freely from an editor they have not touched', async () => {
+    const { router } = mount(new FakeRules([ruleWire()]))
+    await ready()
+    await userEvent.click(within(card('Delivery')).getByRole('button', { name: 'Edit' }))
+    leave(router)
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('asks before leaving a rule that was typed into, and Keep editing stays put', async () => {
+    const { router } = mount(new FakeRules())
+    await screen.findByText('No rules yet')
+    await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
+    await fill('Name', 'Half written')
+    leave(router)
+    expect(await screen.findByText('You have changes that are not saved')).toBeInTheDocument()
+    expect(screen.queryByText('Elsewhere')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
+    expect(router.state.location.pathname).toBe('/automations')
+    expect(screen.getByLabelText('Name')).toHaveValue('Half written')
+  })
+
+  it('leaves, losing the edits, when the person confirms', async () => {
+    const { router } = mount(new FakeRules())
+    await screen.findByText('No rules yet')
+    await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
+    await fill('Name', 'Half written')
+    leave(router)
+    await userEvent.click(await screen.findByRole('button', { name: 'Leave without saving' }))
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+
+  it('does not ask once the rule is saved or the editor is cancelled', async () => {
+    const { router } = mount(new FakeRules())
+    await screen.findByText('No rules yet')
+    await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
+    await fill('Name', 'Saved')
+    await fill('Keywords or phrases', 'hello')
+    await fill('Reply', 'Hi')
+    await userEvent.click(screen.getByRole('button', { name: 'Save rule' }))
+    await screen.findByText('Rule added')
+    await userEvent.click(screen.getByRole('button', { name: /add a rule/i }))
+    await fill('Name', 'Abandoned')
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    leave(router)
+    expect(await screen.findByText('Elsewhere')).toBeInTheDocument()
+  })
+})
+
 describe('editing a rule', () => {
   it('opens it filled in and saves the whole rule back', async () => {
     const original = ruleWire({
@@ -526,6 +654,75 @@ describe('pausing, deleting and ordering', () => {
       expect(names()).toEqual(['B', 'C', 'A'])
     })
     expect(sent(calls, 'PUT', `${BASE}/order`)[1]?.body).toEqual({ ids: [b.id, c.id, a.id] })
+  })
+
+  /** Make one request wait until `release` is called, so the in-flight state can be seen. */
+  function hold(fake: FakeRules, key: string): () => void {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const real = fake.handlers('owner')[key] as Handler
+    fake.overrides[key] = async (call: RecordedCall) => {
+      await gate
+      return real(call)
+    }
+    return release
+  }
+
+  const actionsOf = (name: string) =>
+    ['Edit', 'Pause', 'Delete'].map((label) =>
+      within(card(name)).getByRole('button', { name: label }),
+    )
+
+  it('holds every other action while the order is being saved', async () => {
+    const fake = new FakeRules([ruleWire({ name: 'A' }), ruleWire({ name: 'B' })])
+    const release = hold(fake, `PUT ${BASE}/order`)
+    mount(fake)
+    await ready()
+    await userEvent.click(screen.getByRole('button', { name: 'Move “A” down' }))
+    await waitFor(() => {
+      expect(within(card('B')).getByRole('button', { name: 'Edit' })).toBeDisabled()
+    })
+    for (const button of [...actionsOf('A'), ...actionsOf('B')]) expect(button).toBeDisabled()
+    release()
+    await waitFor(() => {
+      expect(names()).toEqual(['B', 'A'])
+    })
+    expect(within(card('A')).getByRole('button', { name: 'Edit' })).toBeEnabled()
+  })
+
+  it('holds every other action while a rule is being paused', async () => {
+    const fake = new FakeRules([ruleWire({ name: 'A' }), ruleWire({ name: 'B' })])
+    const release = hold(fake, `PUT ${BASE}/${fake.rules[0]?.id as string}`)
+    mount(fake)
+    await ready()
+    await userEvent.click(within(card('A')).getByRole('button', { name: 'Pause' }))
+    await waitFor(() => {
+      expect(within(card('B')).getByRole('button', { name: 'Edit' })).toBeDisabled()
+    })
+    for (const button of [...actionsOf('A'), ...actionsOf('B')]) expect(button).toBeDisabled()
+    release()
+    await waitFor(() => {
+      expect(within(card('A')).getByRole('button', { name: 'Edit' })).toBeEnabled()
+    })
+  })
+
+  it('holds every other action while a rule is being deleted', async () => {
+    const fake = new FakeRules([ruleWire({ name: 'A' }), ruleWire({ name: 'B' })])
+    const release = hold(fake, `DELETE ${BASE}/${fake.rules[0]?.id as string}`)
+    mount(fake)
+    await ready()
+    await userEvent.click(within(card('A')).getByRole('button', { name: 'Delete' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete rule' }))
+    await waitFor(() => {
+      expect(within(card('B')).getByRole('button', { name: 'Edit' })).toBeDisabled()
+    })
+    release()
+    await waitFor(() => {
+      expect(names()).toEqual(['B'])
+    })
+    expect(within(card('B')).getByRole('button', { name: 'Edit' })).toBeEnabled()
   })
 
   it('cannot move the first rule up or the last one down', async () => {

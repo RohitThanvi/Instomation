@@ -182,6 +182,7 @@ describe('validateRuleForm', () => {
     it('needs a reason and sends no text', () => {
       const values = form({
         action: 'handoff',
+        applies_to: 'comment', // a rule that could send a private message, had it a reply
         reply_text: 'ignored',
         private_reply_text: 'ignored',
       })
@@ -211,6 +212,7 @@ describe('validateRuleForm', () => {
     it('sends nothing at all, whatever was typed before', () => {
       const values = form({
         action: 'skip',
+        applies_to: 'both',
         reply_text: 'old text',
         private_reply_text: 'old',
         handoff_reason: 'complaint',
