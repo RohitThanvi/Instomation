@@ -126,7 +126,7 @@ granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expire
 4. Inbox: 3 panes (list with search/filter/sort/tags/status/priority, conversation, customer context).
    Conversation states: AI_ACTIVE, HUMAN_REQUIRED, HUMAN_ACTIVE, RESOLVED. Show intent, AI confidence,
    lead status, internal notes, human takeover and hand-back controls.
-5. Automation rules (structured IF/THEN, no visual workflow builder in V1). Backend built (`/api/v1/automations`,
+5. Automation rules (structured IF/THEN, no visual workflow builder in V1). Built (`src/features/automations`); backend (`/api/v1/automations`,
    permission `automation_manage`: owners, admins and managers). A rule is `{ id, name, enabled, priority,
    applies_to: dm|comment|both, keywords (1 to 20, each up to 60 characters), keyword_match: any|all,
    action: reply|handoff|skip, reply_text, private_reply_text (comment or both, reply rules only), handoff_reason,

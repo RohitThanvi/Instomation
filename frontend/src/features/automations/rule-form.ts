@@ -70,7 +70,12 @@ export function ruleToInput(rule: Rule): RuleInput {
 }
 
 const tidy = (text: string) => text.split(/\s+/).filter(Boolean).join(' ')
-const fold = (text: string) => text.normalize('NFKC').toLowerCase()
+/**
+ * Close to the server's case folding, which a plain lowercase is not: ß becomes ss and a final sigma
+ * matches the others. Without it, `Straße` and `STRASSE` would be kept as two keywords here and
+ * quietly merged into one on the server.
+ */
+const fold = (text: string) => text.normalize('NFKC').toUpperCase().toLowerCase()
 /** Characters as the server counts them (code points), not UTF-16 units. */
 const characters = (text: string) => Array.from(text).length
 const bytes = (text: string) => new TextEncoder().encode(text).length

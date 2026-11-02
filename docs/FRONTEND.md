@@ -30,6 +30,7 @@ src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabi
                  handoffs/ (queue of conversations that need a person, waiting and resolved views),
                  settings/ (assistant behaviour and business profile; owners and admins),
                  usage/ (AI requests and estimated cost by day, purpose and model; owners and admins),
+                 automations/ (IF keywords THEN reply / hand over / send nothing; owners, admins and managers),
                  dashboard/ (connection health, supported actions, analytics view)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
@@ -93,7 +94,7 @@ src/routes/      route components (lazy-loaded), providers, router
 | 3. Dashboard (live Instagram health + role-aware analytics)             | Done. Live analytics API with a 7/30/90-day period selector                                                                                                                                                                                                    |
 | 4. Inbox (3 panes, 4 conversation states, takeover / hand-back, notes)  | Done. Live API; see Known follow-ups for list ordering                                                                                                                                                                                                         |
 | Handoff queue (waiting and resolved views, live counts)                 | Done. Live API; polls the waiting list; inbox actions refresh it; see Known follow-ups                                                                                                                                                                         |
-| 5. Automation rules                                                     | Next                                                                                                                                                                                                                                                           |
+| 5. Automation rules (list, editor, order, pause, delete, preview)       | Done. Owners, admins and managers; live API; see Known follow-ups |
 | 6. Knowledge base                                                       | Done. Owners and admins: list, filter, add, edit, delete, and a retrieval test box                                                                                                                                                                             |
 | 7a. Settings (assistant behaviour, business profile)                    | Done. Owners/admins; live API; see Known follow-ups                                                                                                                                                                                                            |
 | 7b. Usage (AI requests and estimated cost)                              | Done. Owners/admins; live API; see Known follow-ups                                                                                                                                                                                                            |
@@ -113,6 +114,22 @@ src/routes/      route components (lazy-loaded), providers, router
   for the waiting queue (longest-waiting first) but means the resolved history starts with the _oldest_ handoffs, so a
   long history needs several "Load more" clicks to reach recent ones. A newest-first option for `status=resolved` would
   fix it. The screen shows what the server returns.
+- **Automation rules** (`/automations`, `automation_manage`: owners, admins and managers; staff see a notice and the
+  page asks for nothing). The list shows each rule in the order it is tried, with its channel, keywords, action and
+  text, and per rule: move up and down (sends the whole new order; the server refuses a stale one with 409, and the
+  page then reloads what is really there), pause or turn on (replaces the rule with only `enabled` flipped), edit and
+  delete with an inline confirmation (deletion is soft on the server, so messages a rule sent stay traceable). The
+  editor takes keywords one per line, validates with the server's limits (a comment reply in characters, a direct
+  message and a private message in bytes, so accented and non-Latin text counts correctly), shows only the fields the
+  chosen action uses and never sends the others, and shares the settings screen's unsaved-changes guard. One editor is
+  open at a time, and every other action is held while a change is being saved. A preview panel asks the server which
+  rule would answer a made-up message; it checks rules only, not the safety checks that run first on real messages.
+  Messages a rule wrote are captioned "Sent by an automation rule" in the inbox. Client and server fold keywords the
+  same way (a `Straße`/`STRASSE` repeat is kept once by both; the real-backend replay found the client had kept two).
+  Known gaps: the reply-text limits shown (300 characters, 1000 bytes) are the backend's defaults, so an operator who
+  changes them sees the server's message instead of the early hint; matching is by substring, which the editor says
+  but cannot prevent; rules cannot be reordered by dragging; the names of the rules are not shown on inbox messages,
+  only that a rule wrote them.
 - **Usage** (`/usage`, `settings_manage`: owners and admins; managers get 403 from the server). Period selector (7, 30
   or 90 UTC days, the same as the dashboard), summary cards (estimated cost, requests with failures, tokens, average
   response time), requests per day (recharts, lazy-loaded, with an accessible table that adds each day's cost) and

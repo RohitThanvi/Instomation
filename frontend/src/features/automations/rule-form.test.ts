@@ -54,6 +54,11 @@ describe('parseKeywords', () => {
     expect(parseKeywords('Price\nprice\nＰＲＩＣＥ\n PRICE \ncost')).toEqual(['Price', 'cost'])
   })
 
+  it('treats letters the server folds together as repeats, not only plain case', () => {
+    expect(parseKeywords('Straße\nSTRASSE')).toEqual(['Straße'])
+    expect(parseKeywords('ΣΊΣΥΦΟΣ\nσίσυφος')).toEqual(['ΣΊΣΥΦΟΣ'])
+  })
+
   it('keeps commas inside a phrase', () => {
     expect(parseKeywords('how much, please')).toEqual(['how much, please'])
   })
