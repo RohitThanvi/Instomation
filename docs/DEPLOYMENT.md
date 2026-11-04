@@ -43,8 +43,10 @@ Also needed for a working deployment:
 - `TOKEN_ENCRYPTION_KEY` is a Fernet key. Losing it makes every stored Instagram token unreadable (accounts must
   reconnect). Rotate with `TOKEN_ENCRYPTION_PREVIOUS_KEYS`.
 
-The frontend takes `VITE_API_BASE_URL` and `VITE_CLERK_PUBLISHABLE_KEY` **at build time**; they are public and
-baked into the bundle, so changing them means rebuilding the frontend.
+The frontend takes `VITE_API_BASE_URL`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_LEGAL_ENTITY_NAME` and
+`VITE_LEGAL_CONTACT_EMAIL` **at build time**; they are public and baked into the bundle, so changing them means
+rebuilding the frontend. The last two name the operator and a contact address on the public privacy, terms and
+data-deletion pages; the app refuses to start without them (a config error screen lists what is missing).
 
 Compose overrides `DATABASE_URL` and `REDIS_URL` for its own containers; everything else comes from `.env`.
 
@@ -122,7 +124,10 @@ guessing.
 5. Each connected account is subscribed to webhooks during OAuth. If that call fails the account is stored with
    `webhook_subscribed=false` and the UI says it is not receiving messages yet; it is never reported as live.
 6. Until the app passes Meta App Review and Business Verification, only the app's own roles and testers can
-   connect accounts.
+   connect accounts, and Meta delivers real messages and comments only from accounts that hold a role on the app.
+7. In the app's basic settings, set **Privacy Policy URL** to `https://<web-host>/privacy`, **Terms of Service URL**
+   to `https://<web-host>/terms` and **User data deletion** to the instructions URL
+   `https://<web-host>/data-deletion`. These pages are public. See `docs/META_APP_REVIEW.md` for the full checklist.
 
 ## Free-tier path
 

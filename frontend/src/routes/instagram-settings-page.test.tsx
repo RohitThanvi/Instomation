@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InstagramSettingsPage } from './instagram-settings-page'
@@ -17,7 +17,14 @@ vi.mock('@clerk/clerk-react', () => ({
 
 type Role = 'owner' | 'admin' | 'manager' | 'staff'
 
-function mount(query: string, role: Role = 'owner') {
+const ACCOUNT_ID = accountWire().id
+
+function mount(
+  query: string,
+  role: Role = 'owner',
+  account: Record<string, unknown> = {},
+  extra: Parameters<typeof installMockApi>[0] = {},
+) {
   const api = installMockApi({
     'GET /api/v1/organizations': () => ({
       body: { items: [organization({ role })], next_cursor: null },
@@ -26,9 +33,10 @@ function mount(query: string, role: Role = 'owner') {
       body: { authorization_url: 'https://www.instagram.com/oauth/authorize?state=abc' },
     }),
     'GET /api/v1/instagram/accounts': () => ({
-      body: { items: [accountWire()], next_cursor: null },
+      body: { items: [accountWire(account)], next_cursor: null },
     }),
     'GET /api/v1/instagram/capabilities': () => ({ body: CAPABILITIES_WIRE }),
+    ...extra,
   })
   renderWithSession(<InstagramSettingsPage />, {
     path: `/settings/instagram${query}`,
@@ -109,5 +117,56 @@ describe('Instagram OAuth return page', () => {
         expect(calls.some((call) => call.path.endsWith('/oauth/start'))).toBe(false)
       },
     )
+  })
+
+  describe('disconnecting', () => {
+    it('asks first, then disconnects and shows the refreshed status', async () => {
+      let disconnected = false
+      const { calls } = mount(
+        '',
+        'owner',
+        {},
+        {
+          [`DELETE /api/v1/instagram/accounts/${ACCOUNT_ID}`]: () => {
+            disconnected = true
+            return { status: 204 }
+          },
+          'GET /api/v1/instagram/accounts': () => ({
+            body: {
+              items: [accountWire(disconnected ? { status: 'disconnected' } : {})],
+              next_cursor: null,
+            },
+          }),
+        },
+      )
+      await userEvent.click(await screen.findByRole('button', { name: /disconnect @acme.studio/i }))
+      expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+      const confirm = screen.getByRole('group', { name: /confirm disconnecting @acme.studio/i })
+      expect(confirm).toHaveTextContent(/conversation history is kept/i)
+      await userEvent.click(within(confirm).getByRole('button', { name: /disconnect account/i }))
+      expect(await screen.findByText('Disconnected')).toBeInTheDocument()
+      expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(1)
+      expect(screen.queryByRole('button', { name: /disconnect @acme.studio/i })).toBeNull()
+    })
+
+    it('does nothing when the person stays connected', async () => {
+      const { calls } = mount('')
+      await userEvent.click(await screen.findByRole('button', { name: /disconnect @acme.studio/i }))
+      await userEvent.click(screen.getByRole('button', { name: /stay connected/i }))
+      expect(screen.queryByRole('group', { name: /confirm disconnecting/i })).toBeNull()
+      expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+    })
+
+    it.each(['manager', 'staff'] as const)('is not offered to a %s', async (role) => {
+      mount('', role)
+      expect(await screen.findByText('@acme.studio')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /disconnect @acme.studio/i })).toBeNull()
+    })
+
+    it('is not offered for an account that is already disconnected', async () => {
+      mount('', 'owner', { status: 'disconnected' })
+      expect(await screen.findByText('Disconnected')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /disconnect @acme.studio/i })).toBeNull()
+    })
   })
 })

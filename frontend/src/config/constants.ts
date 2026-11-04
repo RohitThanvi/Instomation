@@ -43,4 +43,13 @@ export const ROUTES = {
   automations: '/automations',
   knowledge: '/knowledge',
   instagramSettings: '/settings/instagram',
+  privacy: '/privacy',
+  terms: '/terms',
+  dataDeletion: '/data-deletion',
 } as const
+
+/** Bump when the privacy policy, terms or deletion instructions change in substance. */
+export const LEGAL_EFFECTIVE_DATE = 'November 3, 2026'
+
+/** How long a verified data-deletion request may take. The operator must be able to meet it. */
+export const DELETION_DEADLINE_DAYS = 30

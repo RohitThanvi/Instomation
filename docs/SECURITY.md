@@ -67,5 +67,10 @@ A message written by a rule carries `automation_rule_id`, so the inbox can alway
 ## Data retention on Instagram disconnect
 
 Removed immediately: access token, token expiry, webhook subscription flag. Retained until the owner deletes
-them: customers, conversations, messages, comments (so history survives reconnecting). Account and data deletion
-tooling lands with the privacy phase; until then deletion is a manual operator action.
+them: customers, conversations, messages, comments (so history survives reconnecting). The owner can disconnect an
+account from Settings, Instagram. There is no self-serve deletion API: the public `/data-deletion` page tells people
+to email the operator, who verifies the request and deletes the data within 30 days (`DELETION_DEADLINE_DAYS` in
+`frontend/src/config/constants.ts`; the privacy policy repeats it, so change both together). Erasure is a manual
+operator action. A runbook for it has not been written or tested: deleting the organization row is expected to
+cascade through the tenant-owned tables (the foreign keys are `ON DELETE CASCADE`), but that has not been verified
+against a real database.

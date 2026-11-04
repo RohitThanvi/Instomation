@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  disconnectInstagramAccount,
   fetchCapabilities,
   fetchInstagramAccounts,
   isFeatureEnabled,
@@ -50,5 +51,16 @@ export function useConnectInstagram(returnToOnboarding: boolean) {
       if (returnToOnboarding) writeStorage(STORAGE_KEYS.onboardingReturn, '1')
       navigateToExternal(authorization_url)
     },
+  })
+}
+
+export function useDisconnectInstagram() {
+  const { client } = useSession()
+  const organization = useRequiredOrganization()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (accountId: string) => disconnectInstagramAccount(client, accountId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: tenantKey(organization.id, 'instagram') }),
   })
 }

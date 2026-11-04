@@ -21,7 +21,8 @@ Full stack: `docker compose up -d --build` (the `frontend` service serves the st
 ## Structure
 
 ```
-src/config/      env parsing (Zod) and constants; nothing else reads import.meta.env
+src/config/      env parsing (Zod, including the operator's legal name and contact email) and constants;
+                 nothing else reads import.meta.env
 src/api/         ApiClient, ApiError + envelope parsing, Zod schemas, one module per endpoint group
 src/auth/        Clerk-backed SessionProvider (API client, organizations, tenant selection), route guard
 src/components/  ui/ (primitives), layout/ (shell)
@@ -31,7 +32,9 @@ src/features/    onboarding/ (9-step flow, drafts), instagram/ (accounts, capabi
                  settings/ (assistant behaviour and business profile; owners and admins),
                  usage/ (AI requests and estimated cost by day, purpose and model; owners and admins),
                  automations/ (IF keywords THEN reply / hand over / send nothing; owners, admins and managers),
-                 dashboard/ (connection health, supported actions, analytics view)
+                 dashboard/ (connection health, supported actions, analytics view),
+                 legal/ (public /privacy, /terms and /data-deletion pages for Meta's app review; outside the
+                 sign-in guard; the operator's name and email come from env, never from the source)
 src/test/        fake-fetch API (`mock-api`), fixtures captured from the real backend, render helper
 src/routes/      route components (lazy-loaded), providers, router
 ```

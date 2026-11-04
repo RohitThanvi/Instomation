@@ -22,6 +22,27 @@ export function createRoutes(env: Env): RouteObject[] {
           lazy: async () => ({ Component: (await import('./auth-pages')).SignUpPage }),
         },
         {
+          path: ROUTES.privacy,
+          lazy: async () => {
+            const { PrivacyPage } = await import('@/features/legal/privacy-page')
+            return { Component: () => <PrivacyPage legal={env.legal} /> }
+          },
+        },
+        {
+          path: ROUTES.terms,
+          lazy: async () => {
+            const { TermsPage } = await import('@/features/legal/terms-page')
+            return { Component: () => <TermsPage legal={env.legal} /> }
+          },
+        },
+        {
+          path: ROUTES.dataDeletion,
+          lazy: async () => {
+            const { DataDeletionPage } = await import('@/features/legal/data-deletion-page')
+            return { Component: () => <DataDeletionPage legal={env.legal} /> }
+          },
+        },
+        {
           element: <ProtectedRoute />,
           children: [
             {

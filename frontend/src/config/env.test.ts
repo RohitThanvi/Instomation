@@ -6,8 +6,14 @@ describe('parseEnv', () => {
     const env = parseEnv({
       VITE_API_BASE_URL: 'https://api.example.com//',
       VITE_CLERK_PUBLISHABLE_KEY: 'pk_test_x',
+      VITE_LEGAL_ENTITY_NAME: '  Acme Labs  ',
+      VITE_LEGAL_CONTACT_EMAIL: 'privacy@acme.test',
     })
-    expect(env).toEqual({ apiBaseUrl: 'https://api.example.com', clerkPublishableKey: 'pk_test_x' })
+    expect(env).toEqual({
+      apiBaseUrl: 'https://api.example.com',
+      clerkPublishableKey: 'pk_test_x',
+      legal: { entityName: 'Acme Labs', contactEmail: 'privacy@acme.test' },
+    })
   })
 
   it('reports every missing or invalid variable', () => {
@@ -17,9 +23,26 @@ describe('parseEnv', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(EnvError)
       const { issues } = error as EnvError
-      expect(issues).toHaveLength(2)
-      expect(issues.join(' ')).toContain('VITE_API_BASE_URL')
-      expect(issues.join(' ')).toContain('VITE_CLERK_PUBLISHABLE_KEY')
+      expect(issues).toHaveLength(4)
+      for (const name of [
+        'VITE_API_BASE_URL',
+        'VITE_CLERK_PUBLISHABLE_KEY',
+        'VITE_LEGAL_ENTITY_NAME',
+        'VITE_LEGAL_CONTACT_EMAIL',
+      ]) {
+        expect(issues.join(' ')).toContain(name)
+      }
     }
+  })
+
+  it('rejects a contact address that is not an email', () => {
+    expect(() =>
+      parseEnv({
+        VITE_API_BASE_URL: 'https://api.example.com',
+        VITE_CLERK_PUBLISHABLE_KEY: 'pk_test_x',
+        VITE_LEGAL_ENTITY_NAME: 'Acme Labs',
+        VITE_LEGAL_CONTACT_EMAIL: 'not-an-email',
+      }),
+    ).toThrow(/VITE_LEGAL_CONTACT_EMAIL/)
   })
 })

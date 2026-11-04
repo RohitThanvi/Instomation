@@ -1,7 +1,14 @@
 import { ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
+import type { InstagramAccount } from '@/api/instagram'
 import { FEATURE_COPY, SUPPORTED_FEATURES } from './feature-copy'
 import { describeAccount } from './account-status'
-import { useCapabilities, useConnectInstagram, useInstagramAccounts } from './use-instagram'
+import {
+  useCapabilities,
+  useConnectInstagram,
+  useDisconnectInstagram,
+  useInstagramAccounts,
+} from './use-instagram'
 import { useRequiredOrganization } from '@/auth/session-context'
 import { can } from '@/auth/permissions'
 import { Button } from '@/components/ui/button'
@@ -10,7 +17,77 @@ import { ErrorState } from '@/components/ui/error-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusIndicator } from '@/components/ui/status-indicator'
 
-function ConnectedAccounts() {
+function AccountRow({
+  account,
+  canDisconnect,
+}: {
+  account: InstagramAccount
+  canDisconnect: boolean
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const disconnect = useDisconnectInstagram()
+  const view = describeAccount(account)
+  return (
+    <li className="space-y-3 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-ink text-sm font-medium">@{account.username}</p>
+          <p className="text-ink-muted max-w-md text-sm">{view.detail}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <StatusIndicator tone={view.tone} label={view.label} />
+          {canDisconnect && account.status !== 'disconnected' && !confirming && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Disconnect @${account.username}`}
+              onClick={() => {
+                setConfirming(true)
+              }}
+            >
+              Disconnect
+            </Button>
+          )}
+        </div>
+      </div>
+      {confirming && (
+        <div
+          role="group"
+          aria-label={`Confirm disconnecting @${account.username}`}
+          className="border-line flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+        >
+          <p className="text-ink text-sm">
+            The assistant will stop answering this account. Conversation history is kept.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disconnect.isPending}
+              onClick={() => {
+                setConfirming(false)
+              }}
+            >
+              Stay connected
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              loading={disconnect.isPending}
+              onClick={() => {
+                disconnect.mutate(account.id)
+              }}
+            >
+              Disconnect account
+            </Button>
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
+
+function ConnectedAccounts({ canDisconnect }: { canDisconnect: boolean }) {
   const accounts = useInstagramAccounts()
   if (accounts.isPending) return <Skeleton className="h-16 w-full" />
   if (accounts.isError) {
@@ -27,18 +104,9 @@ function ConnectedAccounts() {
   }
   return (
     <ul className="divide-line border-line divide-y rounded-lg border">
-      {accounts.data.map((account) => {
-        const view = describeAccount(account)
-        return (
-          <li key={account.id} className="flex flex-wrap items-start justify-between gap-3 p-4">
-            <div className="space-y-1">
-              <p className="text-ink text-sm font-medium">@{account.username}</p>
-              <p className="text-ink-muted max-w-md text-sm">{view.detail}</p>
-            </div>
-            <StatusIndicator tone={view.tone} label={view.label} />
-          </li>
-        )
-      })}
+      {accounts.data.map((account) => (
+        <AccountRow key={account.id} account={account} canDisconnect={canDisconnect} />
+      ))}
     </ul>
   )
 }
@@ -103,7 +171,7 @@ export function InstagramConnection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <ConnectedAccounts />
+        <ConnectedAccounts canDisconnect={canConnect} />
 
         <div className="space-y-2">
           <Button

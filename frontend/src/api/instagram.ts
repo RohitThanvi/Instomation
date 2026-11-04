@@ -30,6 +30,15 @@ export function fetchInstagramAccounts(
   })
 }
 
+/** Removes the stored token and stops webhooks; the conversation history is kept. */
+export function disconnectInstagramAccount(client: ApiClient, accountId: string) {
+  return client.request({
+    method: 'DELETE',
+    path: `${API_PREFIX}/instagram/accounts/${accountId}`,
+    schema: z.undefined(),
+  })
+}
+
 /** Feature ids exactly as the backend reports them. */
 export const FEATURES = {
   commentReply: 'FEATURE_COMMENT_REPLY',
