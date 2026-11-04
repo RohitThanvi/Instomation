@@ -142,6 +142,9 @@ guessing.
 
 Every host is selected through environment variables only; nothing in the code depends on a specific provider.
 
+For a single Oracle VM running everything (including PostgreSQL and Redis) behind Caddy, see
+`docs/DEPLOYMENT_ORACLE.md`; `docker-compose.prod.yml` and `deploy/Caddyfile` are what it uses.
+
 Sizing: on Python 3.12 with no traffic, the API process used about 97 MB and each worker about 85 MB resident
 (roughly 440 MB for the API and four workers). That is an idle reading from a development sandbox, not a load
 test, so leave headroom. Free-tier quotas and prices change, so check each provider's current terms; they were not
@@ -161,6 +164,9 @@ curl -fsS https://<api-host>/health          # {"status": ...}, process is up
 curl -fsS https://<api-host>/ready           # {"status":"ready","database":"ok","redis":"ok"}
 curl -fsS "https://<api-host>/api/v1/instagram/webhooks?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=ok"   # echoes: ok
 ```
+
+Behind the Caddy overlay only `/api/*` and the web app are public, so run the `/health` and `/ready` checks on the host
+against `http://127.0.0.1:8000`.
 
 Then confirm every worker is alive (`--check` exits 0) and send a test webhook from the Meta dashboard.
 

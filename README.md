@@ -34,6 +34,8 @@ natural, human tone, detects leads, and hands off to a human when needed.
 
 | 22 | Meta compliance pages | Done in code (public `/privacy`, `/terms` and `/data-deletion` pages whose operator name and contact email come from `VITE_LEGAL_*`; a Disconnect action in Settings, Instagram; `docs/META_APP_REVIEW.md` checklist). The policy text is a draft that needs the operator's review and a lawyer's; deletion is a manual, untested operator procedure; nothing has been submitted to Meta |
 
+| 23 | Production entry point | Done in code, not run (`deploy/Caddyfile` for HTTPS and routing with generated `robots.txt` and `sitemap.xml`; `docker-compose.prod.yml`; every compose port now binds to 127.0.0.1 and long-running services restart; `docs/DEPLOYMENT_ORACLE.md`). Caddy was exercised against stub upstreams; the compose stack, certificates and the Oracle steps are unverified |
+
 Update this table in the same commit that completes a phase.
 
 ## Stack

@@ -103,9 +103,54 @@ def test_env_example_documents_nothing_that_is_not_a_setting() -> None:
     known = {name.upper() for name in Settings.model_fields}
     # variables read by compose / the frontend build rather than by the backend's Settings
     outside_backend = {"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"}
+    outside_backend |= {"SITE_ADDRESS", "ACME_EMAIL"}  # read by docker-compose.prod.yml / Caddy
     outside_backend |= {name for name in documented if name.startswith("VITE_")}
     unknown = sorted(documented - known - outside_backend)
     assert unknown == [], f".env.example documents unknown settings: {unknown}"
+
+
+@pytest.fixture(scope="module")
+def prod_overlay() -> dict[str, Any]:
+    loaded: dict[str, Any] = yaml.safe_load((ROOT / "docker-compose.prod.yml").read_text())
+    return loaded
+
+
+def test_only_loopback_ports_are_published_by_the_base_file(compose: dict[str, Any]) -> None:
+    # Docker-published ports bypass the host firewall, and postgres/redis ship with weak or no
+    # credentials in development, so none of them may listen on a public interface.
+    for name, service in compose["services"].items():
+        for port in service.get("ports", []):
+            assert str(port).startswith("127.0.0.1:"), f"{name} publishes {port} publicly"
+
+
+def test_long_running_services_restart_after_a_reboot(compose: dict[str, Any]) -> None:
+    for name, service in compose["services"].items():
+        expected = "no" if name == "migrate" else "unless-stopped"
+        assert service["restart"] == expected, name
+
+
+def test_prod_overlay_exposes_only_the_web_ports_and_refuses_a_default_password(
+    prod_overlay: dict[str, Any],
+) -> None:
+    services = prod_overlay["services"]
+    assert sorted(services["caddy"]["ports"]) == ["443:443", "443:443/udp", "80:80"]
+    assert "./deploy/Caddyfile:/etc/caddy/Caddyfile:ro" in services["caddy"]["volumes"]
+    assert services["postgres"]["environment"]["POSTGRES_PASSWORD"].startswith(
+        "${POSTGRES_PASSWORD:?"
+    )
+    assert set(services) == {"postgres", "caddy"}, "the overlay must not publish other services"
+
+
+def test_caddy_routes_the_api_and_the_web_app_without_a_hardcoded_domain() -> None:
+    caddyfile = (ROOT / "deploy" / "Caddyfile").read_text()
+    assert "{$SITE_ADDRESS} {" in caddyfile
+    assert "reverse_proxy api:8000" in caddyfile
+    assert "reverse_proxy frontend:8080" in caddyfile
+    assert re.search(r"handle /api/\*", caddyfile)
+    # the sitemap names the requested host, never a literal one
+    assert not re.search(
+        r"https?://(?!\{scheme\}|www\.sitemaps\.org)[a-z0-9.-]+\.[a-z]{2,}", caddyfile
+    )
 
 
 def _location_blocks(conf: str) -> list[str]:

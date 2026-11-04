@@ -1,6 +1,7 @@
 x-backend: &backend
   build: ./backend
   env_file: .env
+  restart: unless-stopped
   environment: &backend-env
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-instomation}:${POSTGRES_PASSWORD:-instomation}@postgres:5432/${POSTGRES_DB:-instomation}
     REDIS_URL: redis://redis:6379/0
@@ -24,6 +25,7 @@ x-worker: &worker
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-instomation}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-instomation}
@@ -31,7 +33,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-instomation}"]
       interval: 5s
@@ -40,8 +42,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -59,7 +62,7 @@ services:
   api:
     <<: *backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=3)"]
       interval: 10s
@@ -99,6 +102,7 @@ services:
       WORKER_QUEUE: maintenance
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
       args:
@@ -107,7 +111,7 @@ services:
         VITE_LEGAL_ENTITY_NAME: ${VITE_LEGAL_ENTITY_NAME:?set VITE_LEGAL_ENTITY_NAME in .env}
         VITE_LEGAL_CONTACT_EMAIL: ${VITE_LEGAL_CONTACT_EMAIL:?set VITE_LEGAL_CONTACT_EMAIL in .env}
     ports:
-      - "5173:8080"
+      - "127.0.0.1:5173:8080"
     depends_on:
       api:
         condition: service_healthy

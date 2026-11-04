@@ -1,0 +1,56 @@
+# Public entry point: terminates TLS (certificates are obtained and renewed automatically) and routes
+# one host to both halves of the app, so the browser sees a single origin and there is no CORS.
+#
+#   SITE_ADDRESS  public hostname, e.g. app.example.com (a leading http:// disables TLS, for local tests)
+#   ACME_EMAIL    contact address for certificate notices
+#
+# Caddy replaces X-Forwarded-For with the real peer address (it trusts no upstream proxies), so the API
+# must run with TRUSTED_PROXY_COUNT=1 and clients cannot spoof their address.
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Crawler files are generated per request from the requested host, so no domain is hardcoded.
+	# The Disallow list covers the signed-in app and the API; keep it in step with ROUTES in
+	# frontend/src/config/constants.ts (a frontend test fails if it drifts).
+	handle /robots.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		# Backtick strings keep their line breaks; the lines are flush left on purpose.
+		respond `User-agent: *
+Disallow: /api/
+Disallow: /onboarding
+Disallow: /inbox
+Disallow: /handoffs
+Disallow: /knowledge
+Disallow: /automations
+Disallow: /usage
+Disallow: /settings
+
+Sitemap: {scheme}://{host}/sitemap.xml
+`
+	}
+
+	handle /sitemap.xml {
+		header Content-Type "application/xml; charset=utf-8"
+		respond `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>{scheme}://{host}/privacy</loc></url>
+<url><loc>{scheme}://{host}/terms</loc></url>
+<url><loc>{scheme}://{host}/data-deletion</loc></url>
+</urlset>
+`
+	}
+
+	# The API sets its own security headers (CSP, HSTS, no-store) in production.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		header Strict-Transport-Security "max-age=31536000"
+		reverse_proxy frontend:8080
+	}
+}

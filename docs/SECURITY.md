@@ -74,3 +74,44 @@ to email the operator, who verifies the request and deletes the data within 30 d
 operator action. A runbook for it has not been written or tested: deleting the organization row is expected to
 cascade through the tenant-owned tables (the foreign keys are `ON DELETE CASCADE`), but that has not been verified
 against a real database.
+
+## Review of 4 November 2026
+
+A read-through of the security-relevant code plus automated scans, done before the first public deployment. It is
+not a penetration test and no outside party has attacked the system.
+
+**Checked in the code and found sound**
+
+- Session tokens: RS256 only; issuer, `exp`, `iat`, `sub` required; the authorized-party check is mandatory in
+  production (settings refuse to load without `CLERK_AUTHORIZED_PARTIES` and `CORS_ALLOWED_ORIGINS`); key refetches
+  are rate-limited so forged key ids cannot hammer the identity provider.
+- Webhooks: HMAC-SHA256 signature and the verify token are compared in constant time.
+- OAuth `state` is single use (read-and-delete in Redis).
+- No SQL built from strings was found; the ORM is used throughout. Outbound HTTP goes only to the configured AI
+  providers and Meta, never to a URL a user supplies, so no server-side request forgery surface was found.
+- `/docs` and the OpenAPI schema are off in production; the backend image runs as a non-root user.
+
+**Scans**
+
+- `pip-audit` on `backend/constraints.txt`: no known vulnerabilities. Bandit (medium and above): no findings.
+- `npm audit --omit=dev`: `fast-uri` (via `ajv`) was fixed with a lockfile update. **`zod` 3.x is still flagged as
+  high severity** (memory exhaustion when validating oversized constrained collections). The fix is zod 4, a major
+  upgrade across every API schema, so it was not done here. The exposure is client-side: the browser validates
+  responses from our own API. Plan the migration; do not ignore it.
+
+**Fixed in this review**
+
+- `docker-compose.yml` published PostgreSQL (default password) and Redis (no password) on every interface. All
+  ports now bind to `127.0.0.1`, and `docker-compose.prod.yml` refuses a default database password. A test guards both.
+
+**Known gaps (not fixed)**
+
+- The request rate limiter **fails open** when Redis is unreachable (a deliberate availability choice, logged as
+  `request_rate_limit_unavailable`). The limits themselves are conservative guesses, never measured under load.
+- No protection against volumetric DDoS, no WAF; a single VM is a single point of failure.
+- No Content-Security-Policy for the web app (it needs the Clerk domains); the API sets its own.
+- Redis has no password; it is reachable only on the compose network and from the host's loopback.
+- CI does not yet run secret scanning, image scanning or `pip-audit`/`npm audit`.
+- No central log shipping or alerting; nobody is paged when a worker dies.
+- Two-factor sign-in for workspace members is a Clerk setting that has not been checked.
+- Host hardening (SSH keys only, patching, firewall) is the operator's job; see `docs/DEPLOYMENT_ORACLE.md`.
