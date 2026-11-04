@@ -55,7 +55,8 @@ src/routes/      route components (lazy-loaded), providers, router
   _and_ the server reports it enabled, so comment-like and profile updates can never render, even if a server
   claimed otherwise. Controls for a reply action the server disabled are hidden, and its stored value is forced off.
 - **Instagram state.** An account is "live" only when `status=active` _and_ `webhook_subscribed=true`. Expired tokens
-  read "Reconnect required"; an unsubscribed webhook reads "Not receiving messages yet".
+  read "Reconnect required"; an unsubscribed webhook reads "Not receiving messages yet". Owners and admins get
+  Disconnect and Re-sync webhooks on each row (the latter only while the account is active).
 - **OAuth return.** Meta returns to `/settings/instagram?status=connected|error&reason=CODE`. Every documented reason
   has its own message; unknown or malformed reasons get a generic one and query text is never echoed.
 - **Tenant keys.** Tenant data is cached under `tenantKey(orgId, ...)`, so switching workspaces cannot show stale rows.

@@ -113,7 +113,11 @@ user + organization; the callback consumes it atomically (`GETDEL`), exchanges t
 Business/Creator, encrypts the token with Fernet (`TokenCipher`, supports key rotation via
 `TOKEN_ENCRYPTION_PREVIOUS_KEYS`), subscribes webhooks (failure is stored as `webhook_subscribed=false`,
 never hidden) and audits. An Instagram account can belong to only one organization. Disconnect wipes the
-token and keeps the row so conversation history stays attached on reconnect.
+token and keeps the row so conversation history stays attached on reconnect. `POST
+/api/v1/instagram/accounts/{id}/webhooks/resync` (settings managers; active accounts only) subscribes again and then
+asks Instagram which fields are active (`GET /me/subscribed_apps`); `webhook_subscribed` becomes true only when
+every field in `META_WEBHOOK_FIELDS` is listed. A failure at either step is recorded as false, not raised, and the
+action is audited.
 
 Capabilities (`FEATURE_*`): comment like, bio update and photo update are hard-coded off because Meta exposes
 no endpoint; they cannot be enabled by configuration. Reply/DM/private-reply can be switched off per

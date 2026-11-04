@@ -42,7 +42,7 @@ export function describeAccount(account: InstagramAccount): AccountStatusView {
   return {
     tone: 'success',
     label: 'Connected',
-    detail: 'Messages and comments from this account are reaching Instomation.',
+    detail: "Instagram is set up to send this account's messages and comments to Instomation.",
     isLive: true,
     needsReconnect: false,
   }

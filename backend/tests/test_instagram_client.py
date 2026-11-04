@@ -130,3 +130,35 @@ async def test_transport_failure_is_retryable() -> None:
     with pytest.raises(InstagramApiError) as exc:
         await _api(httpx.MockTransport(handler)).get_profile(TOKEN)
     assert exc.value.is_retryable and exc.value.status_code == 0
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"data": [{"subscribed_fields": ["messages", "comments"]}]}, {"messages", "comments"}),
+        (
+            {"data": [{"subscribed_fields": ["messages"]}, {"subscribed_fields": ["comments"]}]},
+            {"messages", "comments"},
+        ),
+        ({"data": [{"subscribed_fields": ["messages", 7, None]}]}, {"messages"}),
+        ({"data": [{"id": "1"}, "junk", {"subscribed_fields": "messages"}]}, set()),
+        ({"data": []}, set()),
+        ({"data": "nope"}, set()),
+        ({}, set()),
+    ],
+)
+async def test_subscribed_webhook_fields_reads_only_well_formed_entries(
+    payload: dict[str, object], expected: set[str]
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=payload)
+
+    api = _api(httpx.MockTransport(handler))
+    assert await api.subscribed_webhook_fields(TOKEN) == expected
+    (request,) = seen
+    assert request.method == "GET" and request.url.path.endswith("/me/subscribed_apps")
+    assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+    assert TOKEN not in str(request.url)

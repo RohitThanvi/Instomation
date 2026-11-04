@@ -52,6 +52,8 @@ React Hook Form, Zod, Recharts, Lucide icons, Clerk (`@clerk/clerk-react`). **No
 granted_permissions, webhook_subscribed, token_expires_at }`. Show `token_expired` as "reconnect required" and
     `webhook_subscribed=false` as "not receiving messages yet"; never claim the assistant is live in those states.
   - `DELETE /api/v1/instagram/accounts/{id}` (disconnect)
+  - `POST /api/v1/instagram/accounts/{id}/webhooks/resync` -> the account; `webhook_subscribed` is true only when
+    Instagram confirms every field (409 `INSTAGRAM_ACCOUNT_NOT_ACTIVE` when the account needs reconnecting)
   - Knowledge base (needs `settings_manage`, i.e. owner/admin; manager and staff get 403, so hide the screen):
     - `GET /api/v1/knowledge/entries?kind=&cursor=&limit=` (paginated, oldest first) -> `{ id, kind:
       faq|product|service|policy|website|custom, title, content, attributes, created_at, updated_at }`

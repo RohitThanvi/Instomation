@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   disconnectInstagramAccount,
   fetchCapabilities,
+  resyncInstagramWebhooks,
   fetchInstagramAccounts,
   isFeatureEnabled,
   startInstagramOAuth,
@@ -60,6 +61,17 @@ export function useDisconnectInstagram() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (accountId: string) => disconnectInstagramAccount(client, accountId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: tenantKey(organization.id, 'instagram') }),
+  })
+}
+
+export function useResyncWebhooks() {
+  const { client } = useSession()
+  const organization = useRequiredOrganization()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (accountId: string) => resyncInstagramWebhooks(client, accountId),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: tenantKey(organization.id, 'instagram') }),
   })

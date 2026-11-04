@@ -36,6 +36,8 @@ natural, human tone, detects leads, and hands off to a human when needed.
 
 | 23 | Production entry point | Done in code, not run (`deploy/Caddyfile` for HTTPS and routing with generated `robots.txt` and `sitemap.xml`; `docker-compose.prod.yml`; every compose port now binds to 127.0.0.1 and long-running services restart; `docs/DEPLOYMENT_ORACLE.md`). Caddy was exercised against stub upstreams; the compose stack, certificates and the Oracle steps are unverified |
 
+| 24 | Webhook re-sync | Done and tested with a fake Instagram (POST resync; fields confirmed by Instagram's own listing; Settings button; delivery troubleshooting list in `docs/DEPLOYMENT.md`). Instagram's real `/me/subscribed_apps` response shape is unverified |
+
 Update this table in the same commit that completes a phase.
 
 ## Stack
@@ -205,6 +207,7 @@ verifies membership; with exactly one membership the header may be omitted. Pagi
 | GET | `/api/v1/instagram/oauth/callback` | Meta redirect target; 303-redirects to `FRONTEND_BASE_URL` + `OAUTH_RESULT_PATH` with `?status=connected` or `?status=error&reason=<CODE>` |
 | GET | `/api/v1/instagram/accounts` | Connected accounts (paginated); never returns tokens |
 | DELETE | `/api/v1/instagram/accounts/{id}` | Disconnect (token wiped) |
+| POST | `/api/v1/instagram/accounts/{id}/webhooks/resync` | Subscribe again; true only when Instagram confirms every field |
 
 | GET/POST | `/api/v1/instagram/webhooks` | Meta verification handshake and event delivery. Unauthenticated by design (protected by `X-Hub-Signature-256` and, for GET, the verify token); never call it from the frontend. |
 

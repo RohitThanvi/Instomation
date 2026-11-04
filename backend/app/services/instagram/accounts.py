@@ -1,6 +1,7 @@
 import json
 import secrets
 import uuid
+from collections.abc import Collection
 
 import structlog
 from redis.asyncio import Redis
@@ -15,7 +16,7 @@ from app.models.enums import InstagramAccountStatus
 from app.models.instagram import InstagramAccount
 from app.services.audit import record_audit
 from app.services.instagram.client import InstagramApi, InstagramApiError
-from app.services.instagram.crypto import TokenCipher
+from app.services.instagram.crypto import TokenCipher, TokenDecryptionError
 from app.services.tenancy import TenantContext, require_permission
 
 logger = structlog.get_logger(__name__)
@@ -131,12 +132,9 @@ async def _subscribe(api: InstagramApi, token: str) -> bool:
     return True
 
 
-async def disconnect_account(
+async def _owned_account(
     session: AsyncSession, tenant: TenantContext, account_id: uuid.UUID
-) -> None:
-    """Revoke our access: wipe the token and stop processing. Conversation history is retained
-    until the owner deletes it (see docs/SECURITY.md), and the row is kept so reconnecting
-    restores the same account instead of orphaning that history."""
+) -> InstagramAccount:
     account = (
         await session.execute(
             select(InstagramAccount).where(
@@ -148,6 +146,71 @@ async def disconnect_account(
     ).scalar_one_or_none()
     if account is None:
         raise AppError("INSTAGRAM_ACCOUNT_NOT_FOUND", "Instagram account not found.", 404)
+    return account
+
+
+async def resync_webhooks(
+    session: AsyncSession,
+    tenant: TenantContext,
+    api: InstagramApi,
+    cipher: TokenCipher,
+    account_id: uuid.UUID,
+    required_fields: Collection[str],
+) -> InstagramAccount:
+    """Subscribe the account again and record whether Instagram confirms every required field.
+
+    The flag is only true when Instagram itself lists the fields afterwards, so it reflects what
+    Instagram will deliver rather than what we asked for. A failure is recorded, not raised."""
+    account = await _owned_account(session, tenant, account_id)
+    if account.status is not InstagramAccountStatus.ACTIVE:
+        raise AppError(
+            "INSTAGRAM_ACCOUNT_NOT_ACTIVE",
+            "Reconnect this Instagram account before re-syncing its webhooks.",
+            409,
+        )
+    try:
+        token = cipher.decrypt(account.access_token_encrypted)
+    except TokenDecryptionError as exc:
+        raise AppError(
+            "INSTAGRAM_ACCOUNT_NOT_ACTIVE",
+            "Reconnect this Instagram account before re-syncing its webhooks.",
+            409,
+        ) from exc
+    account.webhook_subscribed = await _subscription_confirmed(api, token, required_fields)
+    record_audit(
+        session,
+        "instagram.webhooks_resynced",
+        tenant.organization_id,
+        tenant.user_id,
+        {"instagram_account_id": str(account.id), "webhook_subscribed": account.webhook_subscribed},
+    )
+    return account
+
+
+async def _subscription_confirmed(
+    api: InstagramApi, token: str, required_fields: Collection[str]
+) -> bool:
+    if not await _subscribe(api, token):
+        return False
+    try:
+        active = await api.subscribed_webhook_fields(token)
+    except InstagramApiError:
+        logger.warning("webhook_subscription_unconfirmed")
+        return False
+    missing = sorted(set(required_fields) - active)
+    if missing:
+        logger.warning("webhook_fields_missing", fields=missing)
+        return False
+    return True
+
+
+async def disconnect_account(
+    session: AsyncSession, tenant: TenantContext, account_id: uuid.UUID
+) -> None:
+    """Revoke our access: wipe the token and stop processing. Conversation history is retained
+    until the owner deletes it (see docs/SECURITY.md), and the row is kept so reconnecting
+    restores the same account instead of orphaning that history."""
+    account = await _owned_account(session, tenant, account_id)
     account.status = InstagramAccountStatus.DISCONNECTED
     account.access_token_encrypted = b""
     account.token_expires_at = None

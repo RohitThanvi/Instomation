@@ -83,11 +83,24 @@ class InstagramApi(Protocol):
     async def refresh_token(self, token: str) -> LongLivedToken: ...
     async def get_profile(self, token: str) -> InstagramProfile: ...
     async def subscribe_webhooks(self, token: str) -> None: ...
+    async def subscribed_webhook_fields(self, token: str) -> frozenset[str]: ...
     async def send_dm(self, token: str, account_id: str, recipient_id: str, text: str) -> str: ...
     async def send_private_reply(
         self, token: str, account_id: str, comment_id: str, text: str
     ) -> str: ...
     async def reply_to_comment(self, token: str, comment_id: str, text: str) -> str: ...
+
+
+def _subscribed_fields(payload: dict[str, Any]) -> frozenset[str]:
+    entries = payload.get("data")
+    if not isinstance(entries, list):
+        return frozenset()
+    fields: set[str] = set()
+    for entry in entries:
+        listed = entry.get("subscribed_fields") if isinstance(entry, dict) else None
+        if isinstance(listed, list):
+            fields.update(field for field in listed if isinstance(field, str))
+    return frozenset(fields)
 
 
 def _permissions(raw: Any) -> list[str]:
@@ -178,6 +191,11 @@ class GraphInstagramApi:
             token=token,
             params={"subscribed_fields": ",".join(self._settings.meta_webhook_fields)},
         )
+
+    async def subscribed_webhook_fields(self, token: str) -> frozenset[str]:
+        """The webhook fields Instagram reports as active for this account and our app."""
+        payload = await self._request("GET", f"{self._base}/me/subscribed_apps", token=token)
+        return _subscribed_fields(payload)
 
     async def send_dm(self, token: str, account_id: str, recipient_id: str, text: str) -> str:
         return await self._send_message(token, account_id, {"id": recipient_id}, text)

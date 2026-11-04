@@ -169,4 +169,91 @@ describe('Instagram OAuth return page', () => {
       expect(screen.queryByRole('button', { name: /disconnect @acme.studio/i })).toBeNull()
     })
   })
+
+  describe('re-syncing webhooks', () => {
+    const RESYNC = `POST /api/v1/instagram/accounts/${ACCOUNT_ID}/webhooks/resync`
+
+    it('repairs an account that is connected but not receiving messages', async () => {
+      let subscribed = false
+      const { calls } = mount(
+        '',
+        'owner',
+        {},
+        {
+          [RESYNC]: () => {
+            subscribed = true
+            return { body: accountWire({ webhook_subscribed: true }) }
+          },
+          'GET /api/v1/instagram/accounts': () => ({
+            body: {
+              items: [accountWire({ webhook_subscribed: subscribed })],
+              next_cursor: null,
+            },
+          }),
+        },
+      )
+      expect(await screen.findByText('Not receiving messages yet')).toBeInTheDocument()
+      await userEvent.click(
+        screen.getByRole('button', { name: /re-sync webhooks for @acme.studio/i }),
+      )
+      expect(await screen.findByText('Connected')).toBeInTheDocument()
+      expect(screen.getByText(/instagram confirmed the webhook subscription/i)).toBeInTheDocument()
+      expect(screen.queryByText(/instagram did not confirm the subscription/i)).toBeNull()
+      expect(
+        calls.filter((call) => call.method === 'POST' && call.path.endsWith('/resync')),
+      ).toHaveLength(1)
+    })
+
+    it('says so plainly when Instagram does not confirm the subscription', async () => {
+      mount(
+        '',
+        'owner',
+        { webhook_subscribed: false },
+        {
+          [RESYNC]: () => ({ body: accountWire({ webhook_subscribed: false }) }),
+        },
+      )
+      await userEvent.click(
+        await screen.findByRole('button', { name: /re-sync webhooks for @acme.studio/i }),
+      )
+      expect(
+        await screen.findByText(/instagram did not confirm the subscription/i),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Not receiving messages yet')).toBeInTheDocument()
+      expect(screen.queryByText(/instagram confirmed the webhook subscription/i)).toBeNull()
+    })
+
+    it('reports a failed request', async () => {
+      mount(
+        '',
+        'owner',
+        {},
+        {
+          [RESYNC]: () => ({
+            status: 503,
+            body: { error: { code: 'INSTAGRAM_UNAVAILABLE', message: 'Try again shortly.' } },
+          }),
+        },
+      )
+      await userEvent.click(
+        await screen.findByRole('button', { name: /re-sync webhooks for @acme.studio/i }),
+      )
+      expect(await screen.findByText(/we could not re-sync the webhooks/i)).toBeInTheDocument()
+    })
+
+    it.each(['manager', 'staff'] as const)('is not offered to a %s', async (role) => {
+      mount('', role)
+      expect(await screen.findByText('@acme.studio')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /re-sync webhooks/i })).toBeNull()
+    })
+
+    it.each(['token_expired', 'disconnected'] as const)(
+      'is not offered for a %s account',
+      async (status) => {
+        mount('', 'owner', { status })
+        expect(await screen.findByText('@acme.studio')).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /re-sync webhooks/i })).toBeNull()
+      },
+    )
+  })
 })

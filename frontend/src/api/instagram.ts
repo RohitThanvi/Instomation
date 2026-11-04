@@ -30,6 +30,15 @@ export function fetchInstagramAccounts(
   })
 }
 
+/** Subscribes again and returns the account with whether Instagram confirmed every webhook field. */
+export function resyncInstagramWebhooks(client: ApiClient, accountId: string) {
+  return client.request({
+    method: 'POST',
+    path: `${API_PREFIX}/instagram/accounts/${accountId}/webhooks/resync`,
+    schema: instagramAccountSchema,
+  })
+}
+
 /** Removes the stored token and stops webhooks; the conversation history is kept. */
 export function disconnectInstagramAccount(client: ApiClient, accountId: string) {
   return client.request({

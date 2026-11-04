@@ -75,6 +75,9 @@ class FakeInstagramApi:
     async def get_profile(self, token: str) -> None:  # pragma: no cover
         raise NotImplementedError
 
+    async def subscribed_webhook_fields(self, token: str) -> frozenset[str]:  # pragma: no cover
+        raise NotImplementedError
+
     async def subscribe_webhooks(self, token: str) -> None:  # pragma: no cover
         raise NotImplementedError
 

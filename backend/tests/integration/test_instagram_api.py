@@ -1,9 +1,11 @@
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -34,6 +36,8 @@ class FakeInstagramApi:
         self.ig_user_id = "17841000"
         self.account_type = "BUSINESS"
         self.subscribe_fails = False
+        self.listing_fails = False
+        self.active_fields: frozenset[str] = frozenset({"comments", "messages"})
         self.refresh_error: InstagramApiError | None = None
         self.refreshed_tokens: list[str] = []
 
@@ -58,6 +62,11 @@ class FakeInstagramApi:
     async def subscribe_webhooks(self, token: str) -> None:
         if self.subscribe_fails:
             raise InstagramApiError("nope", status_code=400, code=100)
+
+    async def subscribed_webhook_fields(self, token: str) -> frozenset[str]:
+        if self.listing_fails:
+            raise InstagramApiError("nope", status_code=500)
+        return self.active_fields
 
     async def send_dm(self, token: str, account_id: str, recipient_id: str, text: str) -> str:
         raise NotImplementedError
@@ -387,3 +396,140 @@ async def test_token_refresh_renews_flags_expired_and_defers_transient_failures(
     async with session_factory() as session:
         row = await session.get(InstagramAccount, ids["soon"])
         assert row is not None and row.status is InstagramAccountStatus.TOKEN_EXPIRED
+
+
+async def _single_account(client: httpx.AsyncClient, user: str) -> dict[str, Any]:
+    (account,) = (await client.get("/api/v1/instagram/accounts", headers=_auth(user))).json()[
+        "items"
+    ]
+    assert isinstance(account, dict)
+    return account
+
+
+async def _resync(client: httpx.AsyncClient, user: str, account: dict[str, Any]) -> httpx.Response:
+    return await client.post(
+        f"/api/v1/instagram/accounts/{account['id']}/webhooks/resync", headers=_auth(user)
+    )
+
+
+async def _connected_owner(
+    client: httpx.AsyncClient, fake_api: FakeInstagramApi
+) -> tuple[str, dict[str, Any]]:
+    fake_api.ig_user_id = f"ig-{uuid.uuid4().hex[:10]}"
+    user = await _org_owner(client)
+    await _connect(client, user)
+    return user, await _single_account(client, user)
+
+
+async def test_resync_repairs_a_subscription_that_failed_at_connect_time(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_api: FakeInstagramApi,
+) -> None:
+    fake_api.subscribe_fails = True
+    user, account = await _connected_owner(client, fake_api)
+    assert account["webhook_subscribed"] is False
+
+    fake_api.subscribe_fails = False
+    response = await _resync(client, user, account)
+    assert response.status_code == 200
+    assert response.json()["webhook_subscribed"] is True
+    assert (await _single_account(client, user))["webhook_subscribed"] is True
+    async with session_factory() as session:
+        row = await session.get(InstagramAccount, uuid.UUID(account["id"]))
+        assert row is not None
+        actions = (
+            (
+                await session.execute(
+                    select(AuditLog.action).where(AuditLog.organization_id == row.organization_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert "instagram.webhooks_resynced" in actions
+
+
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [
+        ("subscribe_fails", True),
+        ("listing_fails", True),
+        ("active_fields", frozenset({"messages"})),
+        ("active_fields", frozenset()),
+    ],
+)
+async def test_resync_reports_not_subscribed_unless_instagram_confirms_every_field(
+    client: httpx.AsyncClient, fake_api: FakeInstagramApi, attribute: str, value: object
+) -> None:
+    user, account = await _connected_owner(client, fake_api)
+    assert account["webhook_subscribed"] is True
+
+    setattr(fake_api, attribute, value)
+    response = await _resync(client, user, account)
+    assert response.status_code == 200
+    assert response.json()["webhook_subscribed"] is False
+    assert (await _single_account(client, user))["webhook_subscribed"] is False
+
+
+async def test_resync_needs_an_active_account_with_a_readable_token(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_api: FakeInstagramApi,
+) -> None:
+    user, account = await _connected_owner(client, fake_api)
+    async with session_factory() as session:
+        row = await session.get(InstagramAccount, uuid.UUID(account["id"]))
+        assert row is not None
+        row.access_token_encrypted = b"not-a-valid-ciphertext"
+        await session.commit()
+    unreadable = await _resync(client, user, account)
+    assert unreadable.status_code == 409
+    assert unreadable.json()["error"]["code"] == "INSTAGRAM_ACCOUNT_NOT_ACTIVE"
+
+    await client.delete(f"/api/v1/instagram/accounts/{account['id']}", headers=_auth(user))
+    disconnected = await _resync(client, user, account)
+    assert disconnected.status_code == 409
+    assert disconnected.json()["error"]["code"] == "INSTAGRAM_ACCOUNT_NOT_ACTIVE"
+
+
+async def test_resync_is_limited_to_the_owning_tenant_and_to_settings_managers(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_api: FakeInstagramApi,
+) -> None:
+    owner, account = await _connected_owner(client, fake_api)
+    outsider = await _org_owner(client)
+    assert (await _resync(client, outsider, account)).status_code == 404
+
+    org_id = (await client.get("/api/v1/organizations", headers=_auth(owner))).json()["items"][0][
+        "id"
+    ]
+    staff = f"user_{uuid.uuid4().hex[:12]}"
+    async with session_factory() as session:
+        member = User(clerk_user_id=staff)
+        session.add(member)
+        await session.flush()
+        session.add(
+            OrganizationMember(
+                organization_id=uuid.UUID(org_id), user_id=member.id, role=MemberRole.STAFF
+            )
+        )
+        await session.commit()
+    assert (await _resync(client, staff, account)).status_code == 403
+
+
+async def test_resync_refuses_an_account_whose_token_expired_even_if_it_is_still_stored(
+    client: httpx.AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    fake_api: FakeInstagramApi,
+) -> None:
+    user, account = await _connected_owner(client, fake_api)
+    async with session_factory() as session:
+        row = await session.get(InstagramAccount, uuid.UUID(account["id"]))
+        assert row is not None
+        row.status = InstagramAccountStatus.TOKEN_EXPIRED
+        await session.commit()
+    response = await _resync(client, user, account)
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INSTAGRAM_ACCOUNT_NOT_ACTIVE"

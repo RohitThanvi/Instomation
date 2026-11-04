@@ -8,24 +8,21 @@ import {
   useConnectInstagram,
   useDisconnectInstagram,
   useInstagramAccounts,
+  useResyncWebhooks,
 } from './use-instagram'
 import { useRequiredOrganization } from '@/auth/session-context'
 import { can } from '@/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ErrorState } from '@/components/ui/error-state'
+import { Notice } from '@/components/ui/notice'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusIndicator } from '@/components/ui/status-indicator'
 
-function AccountRow({
-  account,
-  canDisconnect,
-}: {
-  account: InstagramAccount
-  canDisconnect: boolean
-}) {
+function AccountRow({ account, canManage }: { account: InstagramAccount; canManage: boolean }) {
   const [confirming, setConfirming] = useState(false)
   const disconnect = useDisconnectInstagram()
+  const resync = useResyncWebhooks()
   const view = describeAccount(account)
   return (
     <li className="space-y-3 p-4">
@@ -36,7 +33,20 @@ function AccountRow({
         </div>
         <div className="flex items-center gap-3">
           <StatusIndicator tone={view.tone} label={view.label} />
-          {canDisconnect && account.status !== 'disconnected' && !confirming && (
+          {canManage && account.status === 'active' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={resync.isPending}
+              aria-label={`Re-sync webhooks for @${account.username}`}
+              onClick={() => {
+                resync.mutate(account.id)
+              }}
+            >
+              Re-sync webhooks
+            </Button>
+          )}
+          {canManage && account.status !== 'disconnected' && !confirming && (
             <Button
               size="sm"
               variant="ghost"
@@ -50,6 +60,23 @@ function AccountRow({
           )}
         </div>
       </div>
+      {resync.isError && (
+        <Notice tone="danger" title="We could not re-sync the webhooks">
+          Instagram did not answer or rejected the request. Try again shortly; if it keeps failing,
+          disconnect and reconnect the account.
+        </Notice>
+      )}
+      {resync.data?.webhook_subscribed === true && (
+        <Notice tone="success" title="Instagram confirmed the webhook subscription">
+          Messages and comments are enabled for this account.
+        </Notice>
+      )}
+      {resync.data?.webhook_subscribed === false && (
+        <Notice tone="warning" title="Instagram did not confirm the subscription">
+          Check that the messages and comments webhook fields are switched on in your Meta app, that
+          the app can read this account, then try again.
+        </Notice>
+      )}
       {confirming && (
         <div
           role="group"
@@ -87,7 +114,7 @@ function AccountRow({
   )
 }
 
-function ConnectedAccounts({ canDisconnect }: { canDisconnect: boolean }) {
+function ConnectedAccounts({ canManage }: { canManage: boolean }) {
   const accounts = useInstagramAccounts()
   if (accounts.isPending) return <Skeleton className="h-16 w-full" />
   if (accounts.isError) {
@@ -105,7 +132,7 @@ function ConnectedAccounts({ canDisconnect }: { canDisconnect: boolean }) {
   return (
     <ul className="divide-line border-line divide-y rounded-lg border">
       {accounts.data.map((account) => (
-        <AccountRow key={account.id} account={account} canDisconnect={canDisconnect} />
+        <AccountRow key={account.id} account={account} canManage={canManage} />
       ))}
     </ul>
   )
@@ -171,7 +198,7 @@ export function InstagramConnection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <ConnectedAccounts canDisconnect={canConnect} />
+        <ConnectedAccounts canManage={canConnect} />
 
         <div className="space-y-2">
           <Button

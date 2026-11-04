@@ -34,6 +34,17 @@ def _api(request: Request) -> InstagramApi:
     return api
 
 
+def _account_out(account: InstagramAccount) -> InstagramAccountOut:
+    return InstagramAccountOut(
+        id=account.id,
+        username=account.username,
+        status=account.status,
+        granted_permissions=list(account.granted_permissions),
+        webhook_subscribed=account.webhook_subscribed,
+        token_expires_at=account.token_expires_at,
+    )
+
+
 def _redis(request: Request) -> Redis:
     redis: Redis = request.app.state.redis
     return redis
@@ -117,18 +128,28 @@ async def list_accounts(
         cursor,
         limit,
     )
-    items = [
-        InstagramAccountOut(
-            id=a.id,
-            username=a.username,
-            status=a.status,
-            granted_permissions=list(a.granted_permissions),
-            webhook_subscribed=a.webhook_subscribed,
-            token_expires_at=a.token_expires_at,
-        )
-        for (a,) in rows
-    ]
-    return Page[InstagramAccountOut](items=items, next_cursor=next_cursor)
+    return Page[InstagramAccountOut](
+        items=[_account_out(account) for (account,) in rows], next_cursor=next_cursor
+    )
+
+
+@router.post("/accounts/{account_id}/webhooks/resync", response_model=InstagramAccountOut)
+async def resync_webhooks(
+    account_id: uuid.UUID,
+    request: Request,
+    tenant: SettingsManager,
+    session: SessionDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> InstagramAccountOut:
+    account = await service.resync_webhooks(
+        session,
+        tenant,
+        _api(request),
+        _cipher(request),
+        account_id,
+        settings.meta_webhook_fields,
+    )
+    return _account_out(account)
 
 
 @router.delete(

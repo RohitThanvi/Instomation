@@ -123,11 +123,28 @@ guessing.
    the Meta app. After the round trip the browser lands on `FRONTEND_BASE_URL` + `OAUTH_RESULT_PATH`.
 5. Each connected account is subscribed to webhooks during OAuth. If that call fails the account is stored with
    `webhook_subscribed=false` and the UI says it is not receiving messages yet; it is never reported as live.
+   The owner can repair that from Settings, Instagram (**Re-sync webhooks**) without reconnecting.
 6. Until the app passes Meta App Review and Business Verification, only the app's own roles and testers can
    connect accounts, and Meta delivers real messages and comments only from accounts that hold a role on the app.
 7. In the app's basic settings, set **Privacy Policy URL** to `https://<web-host>/privacy`, **Terms of Service URL**
    to `https://<web-host>/terms` and **User data deletion** to the instructions URL
    `https://<web-host>/data-deletion`. These pages are public. See `docs/META_APP_REVIEW.md` for the full checklist.
+
+### If messages or comments do not arrive
+
+Work down this list; the first three need no Meta dashboard.
+
+1. Settings, Instagram shows the account as **Connected** and Re-sync webhooks confirms. If it does not confirm,
+   Instagram is not listing `messages` and `comments` for the account: check the webhook fields in the Meta app.
+2. `select created_at, event_type, organization_id is null as unowned, status from webhook_events order by
+   created_at desc limit 20;` No rows means Meta is not delivering at all; rows with `unowned = true` mean the
+   account id Meta sends differs from the one stored.
+3. API logs: `webhook_signature_invalid` means `META_APP_SECRET` is wrong. For Instagram Login apps the signing
+   secret may be the Instagram app secret on the Instagram API setup page rather than the main app secret; verify
+   this in the dashboard.
+4. In Meta's dashboard: the callback URL is verified and the fields are ticked under Instagram API setup, the sender
+   is a different account that has a role on the app (and accepted the tester invite), and the receiving account is a
+   Professional account with "Allow access to messages" on.
 
 ## Free-tier path
 
